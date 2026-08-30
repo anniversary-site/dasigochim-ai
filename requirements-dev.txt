@@ -1,0 +1,5 @@
+-r requirements.txt
+
+# scripts/make_sample.py (합성 샘플 사진 생성) 전용.
+# 앱 런타임은 PIL 을 import 하지 않으므로 컨테이너 이미지에는 넣지 않는다.
+pillow>=10.0

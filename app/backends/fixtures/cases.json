@@ -1,0 +1,70 @@
+{
+  "cases": [
+    {
+      "report_id": "R-2025-0412",
+      "occurred_at": "2025-04-12",
+      "hazard": "로욜라도서관 3관 입구 바닥 타일 파손 (모서리 돌출)",
+      "photo_analysis": "출입구 매트 앞 바닥 타일 2매가 깨져 모서리가 약 1cm 돌출된 상태임.",
+      "risk": "돌출된 타일 모서리에 보행자가 걸려 전도될 수 있음.",
+      "action_urgent": "파손 구간에 안전콘과 주의 표지를 설치해 우회 동선을 확보함.",
+      "action_fundamental": "파손 타일을 철거하고 동일 규격 타일로 재시공하며, 인접 타일 들뜸 여부를 함께 점검함.",
+      "department_code": "FACILITY",
+      "risk_level": "medium"
+    },
+    {
+      "report_id": "R-2025-0731",
+      "occurred_at": "2025-07-31",
+      "hazard": "김대건관 2층 복도 바닥 타일 들뜸 재발",
+      "photo_analysis": "이전 보수 구간 인접부 타일 3매가 들떠 발 디딤 시 유동이 발생함.",
+      "risk": "들뜬 타일이 밟히면서 미끄러져 전도 사고로 이어질 수 있음.",
+      "action_urgent": "들뜸 구간을 테이프로 표시하고 통행을 한쪽으로 유도함.",
+      "action_fundamental": "접착 불량 원인인 바닥 습기를 조사한 뒤 방습 처리 후 재시공함.",
+      "department_code": "FACILITY",
+      "risk_level": "medium"
+    },
+    {
+      "report_id": "R-2025-0219",
+      "occurred_at": "2025-02-19",
+      "hazard": "정하상관 계단 난간 고정 불량",
+      "photo_analysis": "3층 계단참 난간 지주 하부 앵커가 풀려 좌우로 유동함.",
+      "risk": "난간에 체중이 실릴 경우 이탈해 추락 사고로 이어질 수 있음.",
+      "action_urgent": "난간 이용 금지 표지를 부착하고 임시 지지대를 설치함.",
+      "action_fundamental": "앵커볼트를 재시공하고 동일 시공 구간 난간 전수 점검을 실시함.",
+      "department_code": "FACILITY",
+      "risk_level": "high"
+    },
+    {
+      "report_id": "R-2025-0605",
+      "occurred_at": "2025-06-05",
+      "hazard": "하비에르관 실험실 복도 소화기 적치물 가림",
+      "photo_analysis": "소화기함 앞에 실험 폐기물 상자가 적치되어 접근이 불가한 상태임.",
+      "risk": "화재 발생 시 초기 진화 장비 접근이 지연될 수 있음.",
+      "action_urgent": "적치물을 즉시 이동하고 소화기 전면 확보선을 표시함.",
+      "action_fundamental": "폐기물 임시 보관 구역을 지정하고 월 1회 소방시설 접근성 점검을 정례화함.",
+      "department_code": "SAFETY_CENTER",
+      "risk_level": "high"
+    },
+    {
+      "report_id": "R-2025-1103",
+      "occurred_at": "2025-11-03",
+      "hazard": "김대건관 지하 주차장 조명 소등 구간 발생",
+      "photo_analysis": "지하 1층 주차 구역 조명 4등 중 3등이 소등되어 시야 확보가 어려움.",
+      "risk": "보행자 인지 지연으로 차량과의 접촉 사고가 발생할 수 있음.",
+      "action_urgent": "임시 이동식 조명을 배치하고 서행 안내 표지를 설치함.",
+      "action_fundamental": "노후 안정기를 교체하고 LED 등기구로 일괄 교체함.",
+      "department_code": "FACILITY",
+      "risk_level": "medium"
+    },
+    {
+      "report_id": "R-2025-0908",
+      "occurred_at": "2025-09-08",
+      "hazard": "학생회관 앞 대형 폐기물 장기 방치",
+      "photo_analysis": "책상·의자 등 폐기 집기가 보도 폭의 절반을 점유한 채 2주 이상 방치됨.",
+      "risk": "보행 동선이 좁아져 통행 중 충돌·전도가 발생할 수 있음.",
+      "action_urgent": "적치물을 보도 밖으로 이동해 통행 폭을 확보함.",
+      "action_fundamental": "대형 폐기물 수거 주기를 단축하고 임시 적치 구역을 별도 지정함.",
+      "department_code": "GENERAL_AFFAIRS",
+      "risk_level": "low"
+    }
+  ]
+}

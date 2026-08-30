@@ -1,0 +1,33 @@
+# 빌드 컨텍스트에서 제외 — 이미지에 들어갈 것은 app/ 과 requirements.txt 뿐이다.
+# 패턴은 컨텍스트 루트 기준이고 `*` 는 `/` 를 넘지 않는다.
+
+# 가상환경 · 캐시
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# 비밀값 — compose 의 env_file 로 런타임에 주입한다. 이미지에 굽지 않는다
+.env
+.env.example
+
+# 개발 전용 — e2e 러너와 샘플 생성기는 호스트에서 돌린다
+scripts/
+
+# 문서
+*.md
+
+# 테스트 사진 (5MB)
+test_img.jpg
+
+# 도구 · VCS
+.git/
+.gitignore
+.vscode/
+.idea/
+Dockerfile
+.dockerignore
+compose.yaml

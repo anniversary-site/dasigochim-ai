@@ -1,0 +1,48 @@
+# AI 서버 단독 개발용 Compose.
+#
+# 실배포는 이 파일이 아니라 deployment/compose.prod.yaml 이다
+# (2026-08-30_인프라_시연배포_최종결정.md 의 권장 디렉터리 구조).
+# 여기서는 로컬에서 컨테이너 하나만 띄워 확인한다.
+#
+#   docker compose up --build          # stub 모드, http://127.0.0.1:8000/docs
+#   BACKEND_MODE=http docker compose up   # 호스트에서 도는 Spring 과 붙여 시험
+#
+# 실배포와 같은 mem_limit(160m)·worker 1개로 맞춰 뒀다. 여기서 OOM 이 나면 EC2 에서도 난다.
+
+name: safewhale-ai
+
+services:
+  ai:
+    build: .
+    image: safewhale/ai:local
+    init: true
+    restart: unless-stopped
+
+    # GEMINI_API_KEY 등 비밀값은 호스트의 .env 에서 런타임에 읽는다.
+    env_file:
+      - .env
+
+    # env_file 보다 우선한다. .env 의 개발용 값(127.0.0.1, localhost)을 컨테이너용으로 덮어쓴다.
+    #
+    # 주의: 오버라이드 변수 이름에 AI_ 접두사를 붙였다. Compose 는 같은 .env 를
+    # ${...} 보간에도 쓰기 때문에, ${BACKEND_BASE_URL:-...} 라고 쓰면 .env 의
+    # localhost 값이 먼저 잡혀 기본값이 죽는다 (컨테이너가 자기 자신을 가리키게 된다).
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8000
+      # 백엔드 내부 API(C-1/C-2/C-5)가 아직 없으면 stub 로 둔다.
+      #   AI_BACKEND_MODE=http docker compose up
+      BACKEND_MODE: ${AI_BACKEND_MODE:-stub}
+      # 호스트에서 도는 Spring 을 가리킨다. 통합 실행 시에는 http://backend:8080 이다.
+      BACKEND_BASE_URL: ${AI_BACKEND_BASE_URL:-http://host.docker.internal:8080}
+
+    # 개발용으로만 연다. 실배포 compose 에서는 ports 없이 expose 만 쓴다.
+    ports:
+      - "${AI_PORT:-8000}:8000"
+
+    # Linux 에서도 host.docker.internal 이 동작하게 한다 (Docker Desktop 은 기본 제공).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    # 실배포와 동일한 제한. t3.micro 1GiB 예산에서 AI 몫이다.
+    mem_limit: 160m
