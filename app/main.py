@@ -22,6 +22,7 @@ from app import prompts
 from app.apps import a1_vision, a2_question, a3_department, a4_draft, a5_insight
 from app.backends.base import BackendError
 from app.config import get_settings
+from app.llm import tracing
 from app.llm.gemini import LlmError
 
 settings = get_settings()
@@ -81,6 +82,12 @@ def check_prompts() -> None:
     prompts.verify_all()
 
 
+@app.on_event("shutdown")
+def flush_tracing() -> None:
+    """Langfuse 는 이벤트를 모아 보낸다. 종료 시 밀어 넣지 않으면 마지막 몇 건이 사라진다."""
+    tracing.flush()
+
+
 @app.get("/health", tags=["health"])
 def health() -> dict:
     return {
@@ -90,6 +97,7 @@ def health() -> dict:
         "api_key_loaded": bool(settings.gemini_api_key),
         "prompt_source": settings.prompt_source,
         "langfuse_ready": settings.langfuse_ready,
+        "langfuse_tracing": tracing.enabled(),
     }
 
 

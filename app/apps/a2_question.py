@@ -25,6 +25,7 @@ from app.common import NO_QA, PromptSelectable, QaPair, VisionResult, format_qa_
 from app.config import get_settings
 
 from app.llm.gemini import generate_structured
+from app.llm import tracing
 
 log = logging.getLogger(__name__)
 
@@ -119,6 +120,7 @@ def _object_check(req: QuestionRequest) -> QuestionResponse:
         ),
         schema=prompt.schema,
         temperature=prompt.temperature,
+        prompt=prompt,
     )
     log.info(
         "object_check 발동 session=%s confidence=%.2f candidates=%d",
@@ -146,6 +148,7 @@ def _generate(prompt, req: QuestionRequest, used: list[str]) -> dict:
         ),
         schema=prompt.schema,
         temperature=prompt.temperature,
+        prompt=prompt,
     )
 
 
@@ -169,6 +172,12 @@ def _next_question(req: QuestionRequest) -> QuestionResponse:
 
 
 def run(req: QuestionRequest) -> QuestionResponse:
+    """API 호출 1회 = Langfuse 트레이스 1개. session_id 로 신고 한 건이 묶인다."""
+    with tracing.request_trace(req.session_id, "② 확인 질문 생성"):
+        return _run(req)
+
+
+def _run(req: QuestionRequest) -> QuestionResponse:
     if needs_object_check(req):
         return _object_check(req)
     return _next_question(req)

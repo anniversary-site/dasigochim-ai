@@ -22,6 +22,7 @@ from app.common import (
     format_qa_history,
 )
 from app.llm.gemini import generate_structured
+from app.llm import tracing
 
 RISK_NODE = "risk"
 DRAFT_NODE = "draft"
@@ -66,6 +67,12 @@ class DraftResponse(BaseModel):
 
 
 def run(req: DraftRequest) -> DraftResponse:
+    """API 호출 1회 = Langfuse 트레이스 1개. session_id 로 신고 한 건이 묶인다."""
+    with tracing.request_trace(req.session_id, "④ 신고서 초안 생성"):
+        return _run(req)
+
+
+def _run(req: DraftRequest) -> DraftResponse:
     qa_history = format_qa_history(req.qa_history, req.qa_pairs, empty=NO_QA_FINAL)
 
     bundle = fetch_cases(
@@ -96,6 +103,7 @@ def run(req: DraftRequest) -> DraftResponse:
         ),
         schema=risk_prompt.schema,
         temperature=risk_prompt.temperature,
+        prompt=risk_prompt,
     )
 
     # mode 분기. 재생성 접미사는 draft 프롬프트 파일에 같이 들어 있다 —
@@ -131,6 +139,7 @@ def run(req: DraftRequest) -> DraftResponse:
         user_prompt=user_prompt,
         schema=draft_prompt.schema,
         temperature=draft_prompt.temperature,
+        prompt=draft_prompt,
     )
 
     return DraftResponse(

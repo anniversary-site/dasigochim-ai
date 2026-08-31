@@ -18,6 +18,7 @@ from app.backends import get_backend
 from app.backends.base import BackendError
 from app.common import PromptSelectable, VisionResult, join_query
 from app.llm.gemini import generate_structured
+from app.llm import tracing
 
 NODE = "department"
 DEFAULT_TOP_K = 8
@@ -53,6 +54,12 @@ def build_candidates_text(candidates: list[dict]) -> str:
 
 
 def run(req: DepartmentRequest) -> DepartmentResponse:
+    """API 호출 1회 = Langfuse 트레이스 1개. session_id 로 신고 한 건이 묶인다."""
+    with tracing.request_trace(req.session_id, "③ 담당 부서 판정"):
+        return _run(req)
+
+
+def _run(req: DepartmentRequest) -> DepartmentResponse:
     backend = get_backend()
 
     # 검색 요청 조립 + C-1 업무범위 검색
@@ -84,6 +91,7 @@ def run(req: DepartmentRequest) -> DepartmentResponse:
         ),
         schema=prompt.schema,
         temperature=prompt.temperature,
+        prompt=prompt,
     )
     llm_confidence = float(matched.get("confidence") or 0.0)
 

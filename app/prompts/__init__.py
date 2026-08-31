@@ -88,6 +88,14 @@ class Prompt:
         return str(self.raw.get(key, default))
 
     @property
+    def langfuse_prompt(self) -> Any | None:
+        """Langfuse SDK 프롬프트 객체. 파일 모드에서는 None 이다.
+
+        추적에서 generation 에 링크하면 UI 에 "이 버전의 생성 목록" 이 붙는다.
+        """
+        return self.raw.get("_langfuse_prompt_object")
+
+    @property
     def label(self) -> str:
         tail = f"+lf{self.langfuse_version}" if self.langfuse_version else ""
         return f"{self.name}/{self.version}{tail}"
