@@ -49,21 +49,82 @@ Swagger UI: <http://127.0.0.1:8000/docs> · 헬스체크: `GET /health`
 
 ```
 app/
-  main.py            FastAPI 조립, 예외 → 502 매핑, 요청 로깅
+  main.py            FastAPI 조립, 예외 → 502 매핑, 요청 로깅, 프롬프트 관리 API
   config.py          .env 로드 (Dify env.* 와 1:1)
   common.py          공유 입력 조각 (VisionResult, PhotoInput, qa_history 조립)
   cases.py           C-5 과거사례 검색 + 목록 조립 (④⑤ 공용)
   llm/gemini.py      LLM 노드 1회 = generate_structured() 1회. 재시도·타임아웃 포함
-  apps/a1..a5.py     API 1개 = 파일 1개 (프롬프트 · 스키마 · 노드 배선 · 라우터)
+  apps/a1..a5.py     API 1개 = 파일 1개 (노드 배선 · 요청/응답 모델 · 라우터)
+  prompts/           **프롬프트는 코드가 아니라 여기 있다** (아래 절 참고)
+    __init__.py      로더 · 버전 결정 · 카탈로그
+    langfuse_source.py  Langfuse 연동 (실패 시 파일로 폴백)
+    defaults.yaml    노드별 활성 버전
+    <노드>/vN.yaml   system · user · schema · temperature · changelog
   backends/
     base.py          C-1 / C-2 / C-5 계약
     stub_client.py   로컬 픽스처 (BACKEND_MODE=stub)
     http_client.py   실제 Spring 백엔드 (BACKEND_MODE=http)
-    fixtures/        departments.json · cases.json
+    fixtures/        departments.json · cases.json · places.json
 scripts/
   e2e.py             end-to-end 러너
+  sync_prompts.py    프롬프트 YAML → Langfuse 업로드
   make_sample.py     합성 샘플 사진 생성기
 ```
+
+## 프롬프트 관리
+
+프롬프트를 파이썬 상수에서 떼어내 **LLM 노드 1개 = 디렉토리 1개 = 버전 파일 N개**로 옮겼다.
+`app/apps/*.py` 에는 이제 배선과 요청/응답 모델만 있다.
+
+| 노드 | 쓰는 곳 | 버전 |
+|---|---|---|
+| `vision` | ① 사진 판독 | v1 Dify 원문 · v2 제보자 설명 우선 · **v3 객체 식별 허들** |
+| `question` | ② 확인 질문 | v1 Dify 원문 · **v2 질문 축 로테이션** |
+| `object_check` | ② 객체 확인 질문 | **v1 (신규 노드)** |
+| `department` · `risk` · `draft` · `summary` · `insight` | ③④⑤ | v1 |
+
+### 버전 고르기 — 좁은 것이 이긴다
+
+1. **요청 본문** `prompt_versions` — 그 호출 1회에만 적용. 재시작 불필요
+   ```jsonc
+   {"session_id": "...", "prompt_versions": {"vision": "v2"}}
+   ```
+2. **`.env`** `PROMPT_VERSIONS="vision=v2,question=v1"` — 이 서버 전체
+3. **`app/prompts/defaults.yaml`** 의 `active` — 기본값
+
+`POST /v1/vision/analyze-upload` 에는 `prompt_version` 폼 필드가 있어 `/docs` 에서
+사진을 올리며 버전만 바꿔 바로 비교할 수 있다.
+
+| 엔드포인트 | 용도 |
+|---|---|
+| `GET /v1/prompts` | 노드별 활성 버전 · 고를 수 있는 버전 · changelog |
+| `GET /v1/prompts/{노드}/{버전}` | 그 버전의 system · user · schema 전문 |
+| `POST /v1/prompts/reload` | YAML 을 고친 뒤 캐시만 비운다 (재시작 없이 반영) |
+
+활성 버전이 하나라도 안 읽히면 **기동 시점에 터진다.** 첫 호출 때 502 로 나타나면
+원인을 찾기 어렵기 때문이다.
+
+### Langfuse (`PROMPT_SOURCE=langfuse`)
+
+**git 의 YAML 이 진실이고 Langfuse 는 그 사본이다.** 동기화는 한 방향뿐이다.
+
+```powershell
+.\.venv\Scripts\python.exe scripts\sync_prompts.py --dry-run   # 무엇이 올라갈지
+.\.venv\Scripts\python.exe scripts\sync_prompts.py             # 올리기
+```
+
+파일 버전 `vN` 이 Langfuse **label** 로 올라가므로, 위 세 경로가 파일 모드와
+Langfuse 모드에서 **같은 식별자**를 쓴다. `defaults.yaml` 의 활성 버전에는
+`production` 라벨도 함께 붙는다. `temperature` 와 JSON 스키마는 `config` 에 실어
+버전과 함께 고정한다.
+
+Langfuse 가 죽거나 키가 비면 **파일 소스로 자동 폴백한다** (경고 로그 1줄).
+시연 중 외부 서비스 때문에 판독이 멈추지 않게 하려는 것이다.
+
+변수 치환은 Langfuse 의 `compile()`(`{{var}}`) 이 아니라 파일 모드와 같은
+`str.format()`(`{var}`) 을 쓴다. 두 소스가 같은 렌더링을 타야 "Langfuse 에서만
+다르게 나온다" 는 버그가 안 생긴다. 대신 Langfuse UI 의 변수 자동 인식은 못 쓴다 —
+의도한 맞바꿈이다.
 
 ## Dify 와 달라진 점
 
@@ -77,6 +138,13 @@ scripts/
   규칙이지만, 백엔드가 이미 이 값을 기대할 수 있어 그대로 뒀다. fallback = `-1`.
 - **thinking_level=low.** gemini-3 계열 기본 추론을 낮춰 지연을 줄였다.
   판독 품질이 아쉬우면 `.env` 의 `THINKING_LEVEL=high` 로 올린다.
+- **① 프롬프트는 문서와 의도적으로 다르다.** `노드별설명.md` 의 원문은 "사진에서 확인되는",
+  "사진에서 실제로 보이는 상태만" 이라고 못 박아 모델이 제보자 부연 설명을 통째로 버렸다.
+  현장을 본 사람은 제보자뿐이고, 사진에 안 담기는 정보(밟으면 덜컹거림, 냄새, 언제부터인지)가
+  판독의 핵심인 경우가 많다. 그래서 **제보자 설명을 판독의 기준으로 올리고**, 사진은 그 진술을
+  확인·구체화하는 증거로 재정의했다. 환각 방지는 "출처를 밝혀 적는다"로 대체했다 —
+  `photo_analysis` 는 사진으로 확인한 것과 제보자에게 들은 것을 문장 안에서 구분해 쓴다.
+  ④⑤ 가 `photo_analysis` 를 그대로 인용하므로 이 구분이 유지되어야 한다.
 
 ## 백엔드 연동 (`BACKEND_MODE`)
 

@@ -15,12 +15,38 @@ NO_QA_FINAL = "(없음)"
 
 
 class VisionResult(BaseModel):
-    """① 사진 판독 결과. ②③④⑤ 가 공통으로 받는다."""
+    """① 사진 판독 결과. ②③④⑤ 가 공통으로 받는다.
+
+    ``object_confidence`` / ``object_candidates`` 는 나중에 붙은 필드라 기본값이 있다.
+    기본값 1.0 은 '확신함' 이므로, 이 필드를 보내지 않는 기존 호출자는 ② 의 객체 확인
+    질문 분기를 타지 않는다 — 계약이 깨지지 않는 대신 기능도 켜지지 않는다.
+    백엔드가 ① 응답의 두 필드를 ② 요청으로 넘겨줘야 실제로 동작한다.
+    """
 
     detected_hazard: str
     photo_analysis: str
     risk: str
     exposed_target: str
+    object_confidence: float = Field(
+        default=1.0, ge=0, le=1, description="위험 요소 객체 식별 확신도 (0.0~1.0)"
+    )
+    object_candidates: list[str] = Field(
+        default_factory=list, description="확신이 낮을 때의 객체 명칭 후보"
+    )
+
+
+class PromptSelectable(BaseModel):
+    """프롬프트 버전을 요청 단위로 갈아끼운다. A/B 실험용.
+
+    서버를 재시작하지 않고 한 번의 호출에만 다른 버전을 쓸 수 있다.
+    비우면 ``.env`` 의 ``PROMPT_VERSIONS`` → ``defaults.yaml`` 순으로 정해진다.
+    """
+
+    prompt_versions: dict[str, str] | None = Field(
+        default=None,
+        description='노드명 → 버전. 예: {"vision": "v2", "question": "v1"}',
+        examples=[{"vision": "v2"}],
+    )
 
 
 class QaPair(BaseModel):

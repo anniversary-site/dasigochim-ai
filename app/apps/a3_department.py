@@ -13,60 +13,17 @@ from __future__ import annotations
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
+from app import prompts
 from app.backends import get_backend
 from app.backends.base import BackendError
-from app.common import VisionResult, join_query
+from app.common import PromptSelectable, VisionResult, join_query
 from app.llm.gemini import generate_structured
 
-TEMPERATURE = 0.2
+NODE = "department"
 DEFAULT_TOP_K = 8
 
-SYSTEM_PROMPT = """당신은 대학의 안전 신고를 담당 부서로 배정하는 분류 담당자입니다.
-아래에 부서별 업무 범위 문서에서 검색된 후보 청크가 주어집니다.
-이 업무 범위만을 근거로, 제시된 위험 요소를 처리할 부서를 하나 고릅니다.
 
-[판정 규칙]
-1. 반드시 주어진 후보 목록에 있는 department_code 중에서만 고릅니다. 목록에 없는 부서를 지어내지 않습니다.
-2. rationale에는 어느 업무 범위 문구가 근거인지 인용해 한 문장으로 씁니다.
-   이 문장은 신고서 초안에 그대로 노출되므로 제보자가 읽어도 이해할 수 있어야 합니다.
-3. confidence는 0.0~1.0 사이의 값으로, 업무 범위 문서가 이 위험 요소를 명확히 포괄하는 정도를 나타냅니다.
-   - 업무 범위에 직접 대응하는 문구가 있으면 0.85 이상
-   - 유추가 필요하면 0.70~0.85
-   - 어느 부서 소관인지 문서로 판단하기 어려우면 0.70 미만
-4. 후보 목록이 비어 있으면 department_code를 빈 문자열로 두고 confidence를 0으로 둡니다. 지어내지 않습니다.
-5. 반드시 주어진 JSON 스키마 형식으로만 출력합니다."""
-
-USER_PROMPT = """[위험 요소]
-- 위치: {location_text}
-- 위험 요소: {detected_hazard}
-- 사진 분석: {photo_analysis}
-- 위험성: {risk}
-- 노출 대상: {exposed_target}
-
-[부서 업무 범위 후보]
-{candidates_text}"""
-
-SCHEMA = {
-    "type": "object",
-    "additionalProperties": False,
-    "properties": {
-        "department_code": {
-            "type": "string",
-            "description": "후보 목록에 있는 부서 코드. 후보가 없으면 빈 문자열",
-        },
-        "rationale": {"type": "string", "description": "업무 범위 문구를 인용한 판정 근거 한 문장"},
-        "confidence": {
-            "type": "number",
-            "description": "업무 범위 문서가 이 위험 요소를 포괄하는 정도 (0.0~1.0)",
-            "minimum": 0,
-            "maximum": 1,
-        },
-    },
-    "required": ["department_code", "rationale", "confidence"],
-}
-
-
-class DepartmentRequest(BaseModel):
+class DepartmentRequest(PromptSelectable):
     session_id: str
     location_text: str
     vision: VisionResult
@@ -113,10 +70,11 @@ def run(req: DepartmentRequest) -> DepartmentResponse:
     corpus_version = int(search.get("corpus_version") or 0)
 
     # 담당 부서 매칭
+    prompt = prompts.pick(NODE, req.prompt_versions)
     matched = generate_structured(
-        node="1803000005 담당 부서 매칭",
-        system_prompt=SYSTEM_PROMPT,
-        user_prompt=USER_PROMPT.format(
+        node=f"{prompt.node} [{prompt.label}]",
+        system_prompt=prompt.system,
+        user_prompt=prompt.render(
             location_text=req.location_text,
             detected_hazard=req.vision.detected_hazard,
             photo_analysis=req.vision.photo_analysis,
@@ -124,8 +82,8 @@ def run(req: DepartmentRequest) -> DepartmentResponse:
             exposed_target=req.vision.exposed_target,
             candidates_text=candidates_text,
         ),
-        schema=SCHEMA,
-        temperature=TEMPERATURE,
+        schema=prompt.schema,
+        temperature=prompt.temperature,
     )
     llm_confidence = float(matched.get("confidence") or 0.0)
 

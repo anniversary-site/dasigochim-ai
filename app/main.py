@@ -15,9 +15,10 @@ import logging
 import time
 import uuid
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
+from app import prompts
 from app.apps import a1_vision, a2_question, a3_department, a4_draft, a5_insight
 from app.backends.base import BackendError
 from app.config import get_settings
@@ -70,6 +71,16 @@ async def handle_backend_error(_: Request, exc: BackendError) -> JSONResponse:
     )
 
 
+@app.on_event("startup")
+def check_prompts() -> None:
+    """활성 프롬프트가 전부 읽히는지 기동 시 확인한다.
+
+    defaults.yaml 오타나 빠진 파일은 첫 호출 때 502 로 나타나면 원인을 찾기 어렵다.
+    여기서 터뜨려 기동 자체를 막는다.
+    """
+    prompts.verify_all()
+
+
 @app.get("/health", tags=["health"])
 def health() -> dict:
     return {
@@ -77,7 +88,47 @@ def health() -> dict:
         "model": settings.model_name,
         "backend_mode": settings.backend_mode,
         "api_key_loaded": bool(settings.gemini_api_key),
+        "prompt_source": settings.prompt_source,
+        "langfuse_ready": settings.langfuse_ready,
     }
+
+
+@app.get("/v1/prompts", tags=["프롬프트 관리"])
+def list_prompts() -> dict:
+    """노드별 활성 버전과 고를 수 있는 버전 목록.
+
+    여기 나온 버전을 각 API 요청 본문의 `prompt_versions` 에 넣으면
+    서버 재시작 없이 그 호출에만 다른 프롬프트를 쓸 수 있다.
+    """
+    return {"source": settings.prompt_source, "nodes": prompts.catalog()}
+
+
+@app.get("/v1/prompts/{name}/{version}", tags=["프롬프트 관리"])
+def show_prompt(name: str, version: str) -> dict:
+    """프롬프트 한 버전의 내용을 그대로 돌려준다 (실험 중 눈으로 확인용)."""
+    try:
+        prompt = prompts.load(name, version)
+    except prompts.PromptError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {
+        "name": prompt.name,
+        "version": prompt.version,
+        "node": prompt.node,
+        "source": prompt.source,
+        "temperature": prompt.temperature,
+        "changelog": prompt.changelog,
+        "system": prompt.system,
+        "user": prompt.user,
+        "schema": prompt.schema,
+    }
+
+
+@app.post("/v1/prompts/reload", tags=["프롬프트 관리"])
+def reload_prompts() -> dict:
+    """YAML 을 고친 뒤 캐시를 비운다. 서버를 다시 띄우지 않고 반영하려는 것."""
+    prompts.reload()
+    prompts.verify_all()
+    return {"status": "reloaded", "nodes": prompts.catalog()}
 
 
 def main() -> None:

@@ -2,76 +2,39 @@
 
 Start → 질문생성기(LLM) → 선택지 3개 보정(Code) → End. 무상태.
 백엔드가 question_index 1·2·3 으로 3회 호출한다.
+
+노드가 두 개다. 어느 쪽을 탈지는 **코드가 결정론으로 정한다** (LLM 이 아니다).
+
+- ``question``     평소 질문. 질문 축을 하나 골라 아직 안 물어본 것을 묻는다.
+- ``object_check`` ① 이 객체를 확신하지 못했을 때(``object_confidence`` 가 임계값 미만)
+                   첫 질문을 "이게 무엇인지" 확인하는 질문으로 바꾼다.
+
+객체를 잘못 특정하면 ③ 부서 배정과 ④ 신고서가 통째로 어긋난다. 되묻는 비용이 가장 싸다.
+두 노드의 응답 형태가 같아서 백엔드·프론트는 분기를 몰라도 된다.
 """
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from app.common import NO_QA, QaPair, VisionResult, format_qa_history
+from app import prompts
+from app.common import NO_QA, PromptSelectable, QaPair, VisionResult, format_qa_history
+from app.config import get_settings
+
 from app.llm.gemini import generate_structured
 
-TEMPERATURE = 0.7
+log = logging.getLogger(__name__)
+
+NODE = "question"
+OBJECT_CHECK_NODE = "object_check"
+OBJECT_CHECK_AXIS = "object_check"
+
 UNKNOWN_LABEL = "잘 모르겠어요"
-
-SYSTEM_PROMPT = """당신은 안전 신고서를 작성하기 위해 제보자에게 확인 질문을 던지는 담당자입니다.
-사진 판독 결과와 지금까지의 질의응답을 보고, 신고서를 더 정확하게 쓰기 위해
-아직 확인되지 않은 정보를 묻는 질문 하나를 만듭니다.
-
-[작성 규칙]
-1. 질문은 제보자가 실제로 알 수 있는 내용만 묻습니다.
-   (예: 언제부터 그랬는지, 누가 그 구역을 쓰는지, 임시 조치가 되어 있는지, 재발 여부)
-   제보자가 알 수 없는 전문적 판단(구조 안전성 수치 등)은 묻지 않습니다.
-2. 이미 받은 답변으로 알 수 있는 내용은 절대 다시 묻지 않습니다.
-3. options에는 서로 겹치지 않는 선택지를 정확히 3개 제시합니다.
-   - 제보자가 고르기 쉬운 짧은 문장으로 씁니다.
-   - "잘 모르겠어요"처럼 회피 가능한 선택지를 하나 포함해도 좋습니다.
-   - value는 영문 소문자 스네이크케이스 식별자, label은 사용자에게 보일 한국어 문장입니다.
-4. "직접 입력" 항목은 시스템이 자동으로 붙으므로 options에 넣지 않습니다.
-5. 질문은 한 번에 하나만, 존댓말로 작성합니다.
-6. 반드시 주어진 JSON 스키마 형식으로만 출력합니다."""
-
-USER_PROMPT = """[신고 위치]
-{location_text}
-
-[제보자 부연 설명]
-{description}
-
-[사진 판독 결과]
-- 위험 요소: {detected_hazard}
-- 사진 분석: {photo_analysis}
-- 위험성: {risk}
-- 노출 대상: {exposed_target}
-
-[지금까지의 질의응답]
-{qa_history}
-
-이제 {question_index}번째 질문(총 {question_count}개 중)을 만드세요."""
-
-SCHEMA = {
-    "type": "object",
-    "additionalProperties": False,
-    "properties": {
-        "text": {"type": "string", "description": "제보자에게 던질 질문 한 문장"},
-        "options": {
-            "type": "array",
-            "description": "서로 겹치지 않는 선택지 3개",
-            "minItems": 3,
-            "maxItems": 3,
-            "items": {
-                "type": "object",
-                "additionalProperties": False,
-                "properties": {
-                    "value": {"type": "string", "description": "영문 소문자 스네이크케이스 식별자"},
-                    "label": {"type": "string", "description": "사용자에게 보일 한국어 선택지 문장"},
-                },
-                "required": ["value", "label"],
-            },
-        },
-    },
-    "required": ["text", "options"],
-}
+NO_AXES = "(없음 — 첫 질문입니다)"
+NO_CANDIDATES = "(후보 없음 — 판독기가 대안을 제시하지 못했습니다)"
 
 
 class Option(BaseModel):
@@ -79,7 +42,7 @@ class Option(BaseModel):
     label: str
 
 
-class QuestionRequest(BaseModel):
+class QuestionRequest(PromptSelectable):
     session_id: str
     location_text: str
     description: str
@@ -88,11 +51,18 @@ class QuestionRequest(BaseModel):
     qa_pairs: list[QaPair] | None = Field(default=None, description="qa_history 대신 쓸 구조체")
     question_index: int = Field(ge=1, description="이번 질문 번호 (1~3)")
     question_count: int = Field(default=3, ge=1, description="총 질문 수")
+    asked_axes: list[str] | None = Field(
+        default=None,
+        description="이미 사용한 질문 축. 넘기면 중복 축을 코드가 걸러낸다 "
+                    "(안 넘겨도 qa_history 로 모델이 추론한다)",
+    )
 
 
 class QuestionResponse(BaseModel):
     text: str
     options: list[Option]
+    axis: str = Field(default="", description="이 질문이 다룬 축. 다음 호출의 asked_axes 에 넣으면 된다")
+    prompt_version: str = Field(default="", description="이번 질문에 쓰인 프롬프트 버전")
 
 
 def fix_options(text: str, options: list) -> dict:
@@ -121,11 +91,48 @@ def fix_options(text: str, options: list) -> dict:
     return {"text": (text or "").strip(), "options": fixed}
 
 
-def run(req: QuestionRequest) -> QuestionResponse:
+def needs_object_check(req: QuestionRequest) -> bool:
+    """객체 확인 질문으로 갈지 판단한다. 임계값 비교이지 LLM 판단이 아니다.
+
+    첫 질문에서만 묻는다 — 뒤의 질문들이 이 답 위에 쌓이기 때문이고,
+    다 물어본 뒤에 "그런데 그게 뭐였죠" 라고 되묻는 것은 늦다.
+    """
+    if req.question_index != 1:
+        return False
+    threshold = get_settings().object_confirm_threshold
+    return req.vision.object_confidence < threshold
+
+
+def _object_check(req: QuestionRequest) -> QuestionResponse:
+    prompt = prompts.pick(OBJECT_CHECK_NODE, req.prompt_versions)
+    candidates = req.vision.object_candidates or []
     result = generate_structured(
-        node="1802000002 질문생성기",
-        system_prompt=SYSTEM_PROMPT,
-        user_prompt=USER_PROMPT.format(
+        node=f"{prompt.node} [{prompt.label}]",
+        system_prompt=prompt.system,
+        user_prompt=prompt.render(
+            location_text=req.location_text,
+            description=req.description,
+            object_confidence=f"{req.vision.object_confidence:.2f}",
+            detected_hazard=req.vision.detected_hazard,
+            photo_analysis=req.vision.photo_analysis,
+            object_candidates="\n".join(f"- {c}" for c in candidates) or NO_CANDIDATES,
+        ),
+        schema=prompt.schema,
+        temperature=prompt.temperature,
+    )
+    log.info(
+        "object_check 발동 session=%s confidence=%.2f candidates=%d",
+        req.session_id, req.vision.object_confidence, len(candidates),
+    )
+    fixed = fix_options(result.get("text", ""), result.get("options", []))
+    return QuestionResponse(**fixed, axis=OBJECT_CHECK_AXIS, prompt_version=prompt.version)
+
+
+def _generate(prompt, req: QuestionRequest, used: list[str]) -> dict:
+    return generate_structured(
+        node=f"{prompt.node} [{prompt.label}]",
+        system_prompt=prompt.system,
+        user_prompt=prompt.render(
             location_text=req.location_text,
             description=req.description,
             detected_hazard=req.vision.detected_hazard,
@@ -135,11 +142,36 @@ def run(req: QuestionRequest) -> QuestionResponse:
             qa_history=format_qa_history(req.qa_history, req.qa_pairs, empty=NO_QA),
             question_index=req.question_index,
             question_count=req.question_count,
+            used_axes="\n".join(f"- {a}" for a in used) or NO_AXES,
         ),
-        schema=SCHEMA,
-        temperature=TEMPERATURE,
+        schema=prompt.schema,
+        temperature=prompt.temperature,
     )
-    return QuestionResponse(**fix_options(result.get("text", ""), result.get("options", [])))
+
+
+def _next_question(req: QuestionRequest) -> QuestionResponse:
+    prompt = prompts.pick(NODE, req.prompt_versions)
+    used = list(req.asked_axes or [])
+
+    result = _generate(prompt, req, used)
+    axis = str(result.get("axis") or "").strip()
+
+    # 축이 겹치면 한 번만 다시 시킨다. 프롬프트로 막는 것과 별개로,
+    # 겹친 축을 명시적으로 금지 목록에 넣고 재시도하는 편이 확실하다.
+    # v1 프롬프트에는 axis 자체가 없으므로 이 경로를 타지 않는다.
+    if axis and axis in used:
+        log.info("질문 축 중복 → 재시도 session=%s axis=%s", req.session_id, axis)
+        result = _generate(prompt, req, used + [axis])
+        axis = str(result.get("axis") or "").strip()
+
+    fixed = fix_options(result.get("text", ""), result.get("options", []))
+    return QuestionResponse(**fixed, axis=axis, prompt_version=prompt.version)
+
+
+def run(req: QuestionRequest) -> QuestionResponse:
+    if needs_object_check(req):
+        return _object_check(req)
+    return _next_question(req)
 
 
 router = APIRouter(tags=["② 확인 질문 생성"])
@@ -147,5 +179,11 @@ router = APIRouter(tags=["② 확인 질문 생성"])
 
 @router.post("/v1/questions/next", response_model=QuestionResponse)
 def next_question(req: QuestionRequest) -> QuestionResponse:
-    """판독 결과와 직전 답변을 보고 확인 질문 1문 + 선택지 3개를 만든다."""
+    """판독 결과와 직전 답변을 보고 확인 질문 1문 + 선택지 3개를 만든다.
+
+    `vision.object_confidence` 가 `OBJECT_CONFIRM_THRESHOLD` 미만이고 첫 질문이면,
+    질문 대신 **"판독기가 본 것이 맞는지" 확인하는 질문**을 낸다 (응답 형태는 동일).
+
+    응답의 `axis` 를 다음 호출의 `asked_axes` 에 넣어 주면 같은 축을 다시 묻지 않는다.
+    """
     return run(req)

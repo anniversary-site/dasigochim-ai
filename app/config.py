@@ -40,10 +40,35 @@ class Settings(BaseSettings):
     case_window_days: int = 30
     recurring_threshold: int = 3  # 이번 건을 포함한 동일 건물 신고 횟수
 
+    # ② 객체 확인 질문. ① 의 object_confidence 가 이 값 미만이면 첫 질문을
+    # "이 객체가 맞습니까" 로 바꾼다. 판정은 LLM 이 아니라 이 임계값이 한다.
+    object_confirm_threshold: float = 0.7
+
+    # ── 프롬프트 소스 ──────────────────────────────────────────────────
+    # file     : app/prompts/<노드>/<버전>.yaml (git 이 진실. 오프라인·CI 기본값)
+    # langfuse : Langfuse 프롬프트 관리. 실패하면 file 로 자동 폴백한다.
+    prompt_source: str = "file"
+    # 노드별 버전 강제. "vision=v2,question=v1" 형식. 요청 본문이 이보다 우선한다.
+    prompt_versions: str = ""
+    prompt_cache_ttl_seconds: int = 60
+
+    # ── Langfuse ──────────────────────────────────────────────────────
+    # .env 는 pydantic-settings 가 읽을 뿐 os.environ 에 넣지 않는다.
+    # 따라서 SDK 가 환경변수를 스스로 못 읽으므로 여기서 받아 명시적으로 넘긴다.
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
+    langfuse_base_url: str = "https://cloud.langfuse.com"
+    langfuse_prompt_prefix: str = "safewhale"
+    langfuse_tracing: bool = True
+
     # 서버
     host: str = "127.0.0.1"
     port: int = 8000
     log_level: str = "info"
+
+    @property
+    def langfuse_ready(self) -> bool:
+        return bool(self.langfuse_public_key and self.langfuse_secret_key)
 
 
 @lru_cache

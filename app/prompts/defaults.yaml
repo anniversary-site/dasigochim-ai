@@ -1,0 +1,19 @@
+# 노드별 활성(기본) 프롬프트 버전.
+#
+# 여기를 바꾸면 서버 전체의 기본 동작이 바뀐다. 실험은 이 파일을 고치지 말고
+#   - 요청 본문 prompt_versions: {"vision": "v2"}   (한 번만, 재시작 불필요)
+#   - .env  PROMPT_VERSIONS="vision=v2,question=v1" (이 서버 전체)
+# 로 한다. 좁은 쪽이 이긴다.
+#
+# PROMPT_SOURCE=langfuse 이면 이 값은 Langfuse label 로 해석된다.
+# scripts/sync_prompts.py 가 파일 버전을 같은 이름의 label 로 올린다.
+
+active:
+  vision: v3
+  question: v2
+  object_check: v1
+  department: v1
+  risk: v1
+  draft: v1
+  summary: v1
+  insight: v1
