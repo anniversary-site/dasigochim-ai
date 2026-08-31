@@ -113,8 +113,14 @@ def request_trace(session_id: str | None, name: str) -> Iterator[None]:
         try:
             from langfuse import propagate_attributes
 
+            # propagate_attributes 는 트레이스 '속성' 만 붙인다. 부모 스팬을 열지 않으면
+            # generation 하나하나가 각자 루트가 되어 트레이스가 호출 수만큼 쪼개진다
+            # (④⑤ 가 2개로 갈라졌다). 루트 스팬을 하나 열어 그 아래로 모은다.
             stack.enter_context(
                 propagate_attributes(session_id=session_id or None, trace_name=name)
+            )
+            stack.enter_context(
+                client.start_as_current_observation(name=name, as_type="span")
             )
         except Exception as exc:  # noqa: BLE001
             _warn_once("트레이스 속성", exc)

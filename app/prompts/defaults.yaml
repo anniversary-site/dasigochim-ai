@@ -14,6 +14,6 @@ active:
   object_check: v1
   department: v1
   risk: v1
-  draft: v1
+  draft: v2
   summary: v1
   insight: v1

@@ -58,7 +58,6 @@ class DraftResponse(BaseModel):
     exposed_target: str
     action_urgent: str
     action_fundamental: str
-    other_opinion: str
     risk_level_final: RiskLevel
     risk_level_rationale: str
     risk_level_changed: bool
@@ -130,8 +129,12 @@ def _run(req: DraftRequest) -> DraftResponse:
             comment=req.comment or "(없음)",
         )
 
+    # YAML 블록 스칼라(|)라 끝에 줄바꿈이 붙는다. 이 값은 로그 한 줄과 Langfuse
+    # generation 이름이 되므로 그대로 두면 이름이 두 줄로 쪼개진다.
     node_label = (
-        draft_prompt.extra("regenerate_node", draft_prompt.node) if regenerate else draft_prompt.node
+        draft_prompt.extra("regenerate_node", draft_prompt.node).strip()
+        if regenerate
+        else draft_prompt.node
     )
     draft = generate_structured(
         node=f"{node_label} [{draft_prompt.label}]",

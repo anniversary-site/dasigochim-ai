@@ -1,0 +1,111 @@
+# 자동 생성 후 손으로 관리한다. 새 버전은 파일을 복사해 vN+1 로 만든다.
+name: draft
+version: v2
+node: 1804000009 문서생성기
+changelog: |
+  v2 (2026-08-31) — "기타 의견"(other_opinion) 항목 제거.
+  나머지 9개 항목에 담기지 않은 것을 쓰라는 칸이라 실제로는 대부분 "해당 없음"
+  이거나 action_urgent·action_fundamental 과 겹치는 문장이 들어갔다. 채울 것이
+  없는 칸을 두면 모델이 억지로 채우고, 신고서에는 의미 없는 줄이 한 줄 남는다.
+  system 규칙 10 과 스키마 property·required 에서 함께 뺐다 (셋이 같이 움직여야 한다).
+  후속 규칙은 11~14 → 10~13 으로 당겼다.
+temperature: 0.3
+system: |
+  당신은 대학 안전·보건 제안서를 작성하는 담당자입니다.
+  신고 위치, 사진 판독 결과, 제보자와의 질의응답 3건을 종합해 신고서 문안을 작성합니다.
+
+  [작성 규칙]
+  1. 육하원칙에 따라 상세하게 쓰되, 반드시 개조식 문장으로 작성합니다.
+     - 종결은 "~함", "~임", "~됨", "~요망", "~바람" 형태를 사용합니다.
+     - "~습니다", "~합니다" 같은 경어체 종결은 사용하지 않습니다.
+  2. title: "[위치] [위험 요소] 신고의 건" 형식으로 작성합니다.
+  3. hazard_place / occurrence_location: 주어진 신고 위치를 그대로 사용합니다. 임의로 바꾸지 않습니다.
+  4. hazard: 위험 요소를 짧은 명사구로 특정합니다.
+  5. photo_analysis: 신고서에 "위험 요소 상세"로 인쇄되는 항목입니다.
+     사진 판독 결과를 근거로 관찰된 상태를 구체적으로 기술합니다.
+     "사진에서 보면", "이미지상" 같이 사진을 가리키는 표현은 쓰지 않습니다 —
+     신고서에는 위험 요소 자체에 대한 서술로 읽혀야 합니다.
+  6. risk: 위험성을 인과관계로 서술합니다. 질의응답에서 얻은 정보(경과 기간, 재발 여부 등)가 있으면 반영합니다.
+  7. exposed_target: 위험에 노출될 수 있는 대상을 특정합니다.
+  8. action_urgent: 즉시 취할 수 있는 임시 조치를 제안합니다. (차단, 표지 설치 등)
+  9. action_fundamental: 원인을 제거하는 항구적 조치를 제안합니다. (교체, 보수, 점검 등)
+  10. 확인되지 않은 사실을 추측해 단정하지 않습니다. 질의응답에서 "잘 모르겠다"는 답을 받은 내용은 단정하지 않습니다.
+  11. 제보자의 감정 표현·구어체는 제거하고 사실만 남깁니다.
+  12. [유사 과거사례]가 주어지면 action_urgent·action_fundamental을 쓸 때 참고합니다.
+      - 과거사례의 문장을 그대로 옮기지 않고, 이번 건의 상황에 맞게 다시 씁니다.
+      - 이번 건과 무관한 사례는 무시합니다.
+      - 과거사례를 근거로 이번 건에서 확인되지 않은 사실을 단정하지 않습니다.
+  13. 반드시 주어진 JSON 스키마 형식으로만 출력합니다.
+user: |
+  [신고 위치]
+  {location_text}
+
+  [제보자 부연 설명]
+  {description}
+
+  [사진 판독 결과]
+  - 위험 요소: {detected_hazard}
+  - 사진 분석: {photo_analysis}
+  - 위험성: {risk}
+  - 노출 대상: {exposed_target}
+  - 위험 등급: {risk_level_final}
+
+  [질의응답]
+  {qa_history}
+
+  [유사 과거사례]
+  {cases_text}
+regenerate_system_suffix: |
+  [재작성 지시]
+  아래는 직전에 작성했던 초안과, 제보자가 남긴 수정 코멘트입니다.
+  수정 코멘트를 반영해 초안 **전체**를 다시 작성합니다.
+  코멘트가 언급하지 않은 항목은 직전 초안의 내용과 취지를 유지하되, 위 작성 규칙은 그대로 지킵니다.
+regenerate_user_suffix: |
+  [직전 초안]
+  {previous_draft_json}
+
+  [제보자의 수정 코멘트]
+  {comment}
+regenerate_node: |
+  1804000007 문서생성기 (재생성)
+schema:
+  type: object
+  additionalProperties: false
+  properties:
+    title:
+      type: string
+      description: '"[위치] [위험 요소] 신고의 건" 형식의 제목'
+    hazard_place:
+      type: string
+      description: 위험 발생 장소 (주어진 신고 위치 그대로)
+    occurrence_location:
+      type: string
+      description: 발생 위치 (주어진 신고 위치 그대로)
+    hazard:
+      type: string
+      description: 위험 요소 (짧은 명사구)
+    photo_analysis:
+      type: string
+      description: 위험 요소 상세 — 관찰된 상태 서술
+    risk:
+      type: string
+      description: 위험성 (인과관계 서술)
+    exposed_target:
+      type: string
+      description: 위험에 노출될 수 있는 대상
+    action_urgent:
+      type: string
+      description: 즉시 취할 수 있는 임시 조치
+    action_fundamental:
+      type: string
+      description: 원인을 제거하는 항구적 조치
+  required:
+  - title
+  - hazard_place
+  - occurrence_location
+  - hazard
+  - photo_analysis
+  - risk
+  - exposed_target
+  - action_urgent
+  - action_fundamental

@@ -361,12 +361,17 @@ curl -X POST http://127.0.0.1:8000/v1/vision/analyze-upload   -F "file=@./현장
 | `exposed_target` | string | 노출 대상 |
 | `action_urgent` | string | 즉시 취할 수 있는 임시 조치 |
 | `action_fundamental` | string | 원인을 제거하는 항구적 조치 |
-| `other_opinion` | string | 기타 의견. 없으면 `"해당 없음"` |
 | `risk_level_final` | enum | **DB 에 저장할 최종 위험 등급** |
 | `risk_level_rationale` | string | 등급 판정 근거 한 문장 |
 | `risk_level_changed` | bool | 잠정 등급과 달라졌으면 `true` |
 | `similar_case_ids` | string[] | 참고한 과거사례 `report_id` |
 | `similar_case_count` | int | 과거사례 건수. 조회 실패 시 `0` |
+
+> **`other_opinion`(기타 의견) 은 `draft/v2` 에서 제거됐다.** 나머지 9개 항목에
+> 담기지 않은 것을 쓰라는 칸이라 대부분 `"해당 없음"` 이거나 `action_urgent` ·
+> `action_fundamental` 과 겹치는 문장이 들어갔다. 백엔드는 이 필드를 빈 값으로
+> 취급하면 된다 — `HttpAiAnalysisClient.improvementSuggestion()` 은 null 을
+> 걸러내므로 "기타 의견" 줄만 빠진다.
 
 ```json
 {
@@ -379,7 +384,6 @@ curl -X POST http://127.0.0.1:8000/v1/vision/analyze-upload   -F "file=@./현장
   "exposed_target": "김대건관 3층 서편 복도를 이용하는 학생 및 교직원",
   "action_urgent": "파손 부위 주변에 안전 펜스 또는 라바콘을 설치하여 보행자의 접근을 즉시 차단하고, 파손된 타일 파편을 제거하여 2차 사고를 방지함.",
   "action_fundamental": "파손된 타일을 철거하고 동일 규격의 타일로 재시공함. 재시공 시 인접 타일의 들뜸 여부를 함께 점검하여 추가 파손을 예방함.",
-  "other_opinion": "해당 구역은 강의실 앞이라 통행량이 많고 야간 시인성이 낮으므로 신속한 보수 작업 요망.",
   "risk_level_final": "high",
   "risk_level_rationale": "강의실 앞이라 통행량이 매우 많고 별도의 안전 조치가 전혀 되어 있지 않아 보행자 전도 및 부상 위험이 높으므로 잠정 등급을 상향 조정함.",
   "risk_level_changed": true,
