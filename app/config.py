@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     department_confidence_threshold: float = 0.7
     default_department_code: str = "SAFETY_CENTER"
 
+    # ⑤ 반복 발생 판정. 집계 자체는 백엔드 SQL 이 하고, 기간과 임계값은 AI 서버가 정해
+    # C-5 요청에 실어 보낸다 — 인사이트 문장의 성격을 좌우하므로 프롬프트와 함께 튜닝한다.
+    case_window_days: int = 30
+    recurring_threshold: int = 3  # 이번 건을 포함한 동일 건물 신고 횟수
+
     # 서버
     host: str = "127.0.0.1"
     port: int = 8000

@@ -75,8 +75,34 @@ class HttpBackendClient:
             },
         )
 
-    def search_cases(self, session_id: str, query_text: str, top_k: int) -> dict[str, Any]:
-        return self._post(
-            "/internal/v1/cases/search",
-            {"session_id": session_id, "query_text": query_text, "top_k": top_k},
-        )
+    def search_cases(
+        self,
+        session_id: str,
+        query_text: str,
+        top_k: int,
+        *,
+        report_id: str | None = None,
+        building_id: int | None = None,
+        building_name: str | None = None,
+        floor: str | None = None,
+        window_days: int = 30,
+    ) -> dict[str, Any]:
+        """C-5. 값이 없는 위치 필드는 빼고 보낸다 — 백엔드가 '집계 안 함' 으로 읽는다.
+
+        2단계에서 ``query_embedding`` 이 여기 추가된다. 백엔드는 이 키가 없거나
+        null 이면 최근순으로, 있으면 벡터 거리순으로 정렬한다.
+        """
+        payload: dict[str, Any] = {
+            "session_id": session_id,
+            "query_text": query_text,
+            "top_k": top_k,
+            "window_days": window_days,
+        }
+        optional = {
+            "report_id": report_id,
+            "building_id": building_id,
+            "building_name": building_name,
+            "floor": floor,
+        }
+        payload.update({k: v for k, v in optional.items() if v is not None})
+        return self._post("/internal/v1/cases/search", payload)

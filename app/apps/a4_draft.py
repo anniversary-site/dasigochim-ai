@@ -171,6 +171,12 @@ class DraftRequest(BaseModel):
     comment: str | None = Field(default=None, description="regenerate 전용 수정 코멘트")
     top_k: int | None = Field(default=None, description="과거사례 검색 개수 (비우면 4)")
 
+    # 과거사례 목록의 관련성 기준. 1단계에는 텍스트 검색이 없어 위치가 유일한 신호다
+    # (2단계에서 임베딩 유사도가 붙으면 이 값들은 보조 필터가 된다).
+    building_id: int | None = Field(default=None, description="신고 건물 id (백엔드 buildings.id)")
+    building_name: str | None = Field(default=None, description="신고 건물명 (building_name_snapshot)")
+    floor: str | None = Field(default=None, description="신고 층")
+
 
 class DraftResponse(BaseModel):
     title: str
@@ -200,6 +206,9 @@ def run(req: DraftRequest) -> DraftResponse:
         photo_analysis=req.vision.photo_analysis,
         risk=req.vision.risk,
         top_k=req.top_k,
+        building_id=req.building_id,
+        building_name=req.building_name,
+        floor=req.floor,
     )
 
     # 위험도 재산출
