@@ -321,6 +321,12 @@ curl -X POST http://127.0.0.1:8000/v1/vision/analyze-upload   -F "file=@./현장
 | `previous_draft_json` | string | `regenerate` 시 | 직전 초안 JSON 문자열 |
 | `comment` | string | `regenerate` 시 | 제보자 수정 코멘트 |
 | `top_k` | int | — | 과거사례 검색 개수. 비우면 `4` |
+| `building_id` | int | — | 신고 건물 id. 과거사례 관련성 기준 |
+| `building_name` | string | — | 신고 건물명 (`building_name_snapshot`) |
+| `floor` | string | — | 신고 층 |
+
+> 1단계에는 텍스트 검색이 없어 **위치가 과거사례 관련성의 유일한 신호**다.
+> 세 필드를 안 보내면 과거사례가 최근순이 되어 관련성이 사라진다.
 
 ```json
 {
@@ -405,7 +411,7 @@ curl -X POST http://127.0.0.1:8000/v1/vision/analyze-upload   -F "file=@./현장
 | 필드 | 타입 | 필수 | 설명 |
 |---|---|---|---|
 | `session_id` | string | ✅ | |
-| `report_id` | string | — | `report_public_id` |
+| `report_id` | string | — | `report_public_id`. 목록·집계에서 **이번 건을 뺀다** |
 | `location_text` | string | ✅ | 신고 위치 |
 | `detected_hazard` | string | ✅ | 확정 초안의 `hazard` |
 | `photo_analysis` | string | ✅ | 확정 초안의 `photo_analysis` |
@@ -413,6 +419,12 @@ curl -X POST http://127.0.0.1:8000/v1/vision/analyze-upload   -F "file=@./현장
 | `risk_level` | enum | ✅ | 확정 등급 (`risk_level_final`) |
 | `draft_json` | string | ✅ | 확정된 신고서 초안 JSON **문자열** |
 | `top_k` | int | — | 과거사례 검색 개수. 비우면 `4` |
+| `building_id` | int | — | 반복 발생 집계 대상 건물 id |
+| `building_name` | string | — | 집계 대상 건물명 (`building_name_snapshot`) |
+| `floor` | string | — | 이번 신고의 층. 동일 층 집계용 |
+
+> **위치 세 필드가 없으면 반복 발생 집계를 건너뛴다** — `recurrence: null`,
+> `is_recurring: false` 로 응답한다. 백엔드는 `reports` 행에서 그대로 채워 보낼 것.
 
 ### 응답 `200`
 
@@ -420,25 +432,57 @@ curl -X POST http://127.0.0.1:8000/v1/vision/analyze-upload   -F "file=@./현장
 |---|---|---|
 | `summary` | string | 목록·알림용 두 문장 이내 개조식 요약 |
 | `keywords` | string[] | 검색·분류용 키워드 3~5개 |
-| `is_recurring` | bool | 같은 장소·유형의 반복 발생이면 `true` |
+| `is_recurring` | bool | 반복 발생 여부. **LLM 판단이 아니라 `recurrence` 집계로 결정된다** (아래 참고) |
 | `insight` | string | 담당자용 판단 근거 2~4문장. **제보자에게 보이지 않는 내부용** |
 | `recommended_priority` | `immediate` \| `high` \| `normal` \| `low` | 권고 처리 우선순위 |
 | `related_report_ids` | string[] | 인사이트의 근거로 **실제 인용한** 과거사례 |
 | `similar_case_ids` | string[] | C-5 가 돌려준 과거사례 전체 |
 | `similar_case_count` | int | 과거사례 건수 |
+| `recurrence` | object \| null | `is_recurring` 의 근거가 된 DB 집계 원본. 위치 미상이면 `null` |
+
+**`recurrence` 필드**
+
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| `window_days` | int | 집계 기간 (`.env: CASE_WINDOW_DAYS`) |
+| `building_name` | string | 집계 대상 건물명 |
+| `floor` | string | 이번 신고의 층 |
+| `total` | int | 기간 내 동일 건물 신고 건수 (**이번 건 제외**) |
+| `unresolved` | int | 그중 미해결(접수·처리중) 건수 |
+| `same_floor` | int | 그중 동일 층 건수 (`total` 에 포함된 수치) |
+| `risk_distribution` | object | 위험 등급별 건수 |
+| `first_occurred_at` | string | 기간 내 최초 발생일 |
 
 ```json
 {
-  "summary": "김대건관 3층 서편 복도 바닥 타일이 파손되어 돌출됨. 통행량이 많은 구역으로 보행자 전도 사고 위험이 높아 즉각적인 접근 차단 및 보수가 필요함.",
-  "keywords": ["김대건관", "바닥 파손", "전도 사고", "시설 보수", "복도"],
+  "summary": "김대건관 2층 서편 복도 바닥 타일 3매가 파손되어 모서리가 돌출됨. 보행자 전도 사고 위험이 있어 안전 조치 및 재시공이 필요함.",
+  "keywords": ["김대건관", "바닥 파손", "전도 위험", "타일 보수"],
   "is_recurring": true,
-  "insight": "- 김대건관 내 바닥 타일 파손 및 들뜸 문제는 과거에도 발생한 바 있어, 해당 건물의 노후화나 시공 상태 전반에 대한 근본적인 점검이 필요함. - 과거 유사 사례(R-2025-0731)에서 접착 불량 및 습기 문제가 원인으로 지목되었으므로, 단순 보수 외에 바닥 상태에 대한 정밀 진단을 권장함.",
+  "insight": "최근 30일 김대건관 2층에서만 2건의 신고가 접수되어 바닥 마감재 관련 위험이 반복되고 있음. 특히 김대건관 전체 미해결 건이 2건 존재하므로, 이번 건을 포함한 2층 바닥 보수 시 인접 구간의 안전 점검을 병행하여 추가 사고를 방지해야 함. 과거 R-2026-0823 사례에서 바닥 습기 문제가 지적되었음에도 재발한 점을 고려할 때, 단순 보수를 넘어 근본적인 바닥 상태 정밀 점검이 필요함.",
   "recommended_priority": "immediate",
-  "related_report_ids": ["R-2025-0731", "R-2025-0412"],
-  "similar_case_ids": ["R-2025-0731", "R-2025-1103", "R-2025-0412", "R-2025-0219"],
-  "similar_case_count": 4
+  "related_report_ids": ["R-2026-0823", "R-2026-0812"],
+  "similar_case_ids": ["R-2026-0823", "R-2026-0812", "R-2026-0805", "R-2026-0715"],
+  "similar_case_count": 4,
+  "recurrence": {
+    "window_days": 30,
+    "building_name": "김대건관",
+    "floor": "2",
+    "total": 3,
+    "unresolved": 2,
+    "same_floor": 2,
+    "risk_distribution": { "medium": 2, "high": 1 },
+    "first_occurred_at": "2026-08-05"
+  }
 }
 ```
+
+> **반복 발생은 LLM 이 판단하지 않는다.** "최근 30일 동일 건물 3건" 은 백엔드 SQL 집계로
+> 나오는 확정 사실이고, `is_recurring` 은 `recurrence.total + 1 >= RECURRING_THRESHOLD`
+> 로 코드가 정한다. LLM 은 그 사실을 담당자용 문장으로 풀어 쓰는 일만 한다.
+>
+> 프롬프트에는 각 수치의 적용 범위를 `[김대건관 전체] 3건` / `[김대건관 2층] 2건` 처럼
+> 대괄호로 명시해 넣는다. 범위를 안 적으면 모델이 둘을 뒤섞어 "2층에서 3건" 같은
+> 문장을 만든다 — SQL 로 몰아낸 환각이 서술 단계로 되돌아오는 경로다.
 
 > `related_report_ids` ⊆ `similar_case_ids` 다. 전자는 LLM 이 실제 근거로 삼은 것,
 > 후자는 검색이 돌려준 전체다. 화면에 "관련 신고" 로 붙일 것은 `related_report_ids` 다.
@@ -522,19 +566,43 @@ curl -X POST http://127.0.0.1:8000/v1/vision/analyze-upload   -F "file=@./현장
 `assigned_by: "fallback"`, `confidence: null` 로 돌려준다.
 **이 판단은 결정론이라 백엔드 몫이다** — LLM 이 지어낸 코드를 그대로 믿지 않기 위한 관문이다.
 
-### C-5 `POST /internal/v1/cases/search` — 유사 과거사례 검색
+### C-5 `POST /internal/v1/cases/search` — 과거사례 조회 + 반복 발생 집계
 
 ```json
-// 요청
-{ "session_id": "rpt-1042", "query_text": "...", "top_k": 4 }
+// 요청 — 값이 없는 선택 필드는 키 자체를 빼고 보낸다
+{ "session_id": "rpt-1042", "query_text": "...", "top_k": 4, "window_days": 30,
+  "report_id": "R-2026-0831", "building_id": 1, "building_name": "김대건관", "floor": "2" }
 // 응답
 {
   "cases": [
-    { "report_id": "R-2025-0412", "occurred_at": "2025-04-12", "score": 0.77,
+    { "report_id": "R-2026-0823", "occurred_at": "2026-08-23", "score": null,
+      "status": "RESOLVED", "building_name": "김대건관", "floor": "2",
       "hazard": "...", "action_fundamental": "..." }
-  ]
+  ],
+  "stats": {
+    "window_days": 30, "building_name": "김대건관", "floor": "2",
+    "total": 3, "unresolved": 2, "same_floor": 2,
+    "risk_distribution": { "medium": 2, "high": 1 },
+    "first_occurred_at": "2026-08-05"
+  }
 }
 ```
+
+응답은 성격이 다른 두 덩어리다.
+
+- `cases` — 관련 과거 신고 목록. 1단계는 **동일 건물 우선 → 최근순**이고 `score` 는 `null` 이다.
+  2단계에서 임베딩 유사도 순으로 바뀌며 `score` 가 채워진다. **응답 계약은 그대로다.**
+  `window_days` 에 묶이지 않으므로 오래된 건도 조치 내역 참고용으로 올라올 수 있다.
+- `stats` — 동일 건물·기간 집계. **순수 SQL 이라 임베딩과 무관하다.** `building_id` 가
+  없으면 `null` 이다. `total` 은 이번 신고를 제외한 건수이고, `same_floor` 는 `total` 에
+  포함된 수치다 (합산 대상이 아님).
+
+`action_fundamental` 은 `report_activity_logs.action_note WHERE activity_type='RESOLVE'`
+에서 나온다 — `reports` 에 조치 컬럼을 추가할 필요가 없다. 미해결 건은 빈 문자열이고
+AI 서버가 `(미조치 — 처리 진행 중)` 으로 표시한다.
+
+> 백엔드 구현 계약과 참조 SQL: `specification/2026-08-31_AI_과거사례_인사이트_C5계약.md`
+> 참조 구현: `app/backends/stub_client.py` 의 `search_cases`
 
 **실패해도 ④⑤ 는 200 으로 계속 진행한다.** 과거사례는 부가 정보다.
 
@@ -555,6 +623,8 @@ curl -X POST http://127.0.0.1:8000/v1/vision/analyze-upload   -F "file=@./현장
 | `BACKEND_TIMEOUT_SECONDS` | `10` | |
 | `DEPARTMENT_CONFIDENCE_THRESHOLD` | `0.7` | **stub 전용.** http 모드에선 백엔드가 결정 |
 | `DEFAULT_DEPARTMENT_CODE` | `SAFETY_CENTER` | **stub 전용.** fallback 대상 |
+| `CASE_WINDOW_DAYS` | `30` | ⑤ 반복 발생 집계 기간. C-5 요청에 실어 보낸다 |
+| `RECURRING_THRESHOLD` | `3` | `is_recurring` 임계값. **이번 건을 포함한** 동일 건물 신고 횟수 |
 
 ---
 

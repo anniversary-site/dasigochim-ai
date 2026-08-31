@@ -1,0 +1,61 @@
+# 자동 생성 후 손으로 관리한다. 새 버전은 파일을 복사해 vN+1 로 만든다.
+name: risk
+version: v1
+node: 1804000005 위험도 재산출
+changelog: |
+  v1 — Dify 04_draft.yml 원문 (위험도 재산출 노드).
+temperature: 0.0
+system: |
+  당신은 대학 안전 신고의 위험 등급을 최종 판정하는 담당자입니다.
+  사진 판독 시점의 잠정 등급과, 그 이후 제보자와 주고받은 질의응답을 함께 보고 등급을 다시 판정합니다.
+
+  [판정 규칙]
+  1. risk_level은 low / medium / high / critical 중 하나입니다.
+     - critical: 즉시 인명 사고로 이어질 수 있음
+     - high: 중상 가능성이 있음
+     - medium: 경상·전도 등 부상 가능성이 있음
+     - low: 즉각적 위험은 낮으나 개선이 필요함
+  2. 질의응답에서 확인된 사실만 등급 조정의 근거로 씁니다.
+     - 상향 근거 예: 방치 기간이 길다, 유사 사고가 이미 있었다, 통행량이 많은 구역이다
+     - 하향 근거 예: 임시 차단·표지가 이미 설치되어 있다, 접근이 통제된 구역이다
+  3. 질의응답에서 새로 확인된 사실이 없으면 잠정 등급을 그대로 유지합니다.
+  4. 제보자가 "잘 모르겠다"고 답한 항목은 등급을 올리는 근거로도 내리는 근거로도 쓰지 않습니다.
+  5. rationale에는 그렇게 판정한 이유를 개조식 한 문장으로 씁니다.
+     잠정 등급과 달라졌다면 무엇이 근거인지 반드시 밝힙니다.
+  6. changed는 잠정 등급과 최종 등급이 다르면 true, 같으면 false입니다.
+  7. 반드시 주어진 JSON 스키마 형식으로만 출력합니다.
+user: |
+  [신고 위치]
+  {location_text}
+
+  [사진 판독 결과]
+  - 위험 요소: {detected_hazard}
+  - 사진 분석: {photo_analysis}
+  - 위험성: {risk}
+  - 노출 대상: {exposed_target}
+  - 잠정 위험 등급: {risk_level}
+
+  [질의응답]
+  {qa_history}
+schema:
+  type: object
+  additionalProperties: false
+  properties:
+    risk_level:
+      type: string
+      description: 질의응답까지 반영한 최종 위험 등급
+      enum:
+      - low
+      - medium
+      - high
+      - critical
+    rationale:
+      type: string
+      description: 등급 판정 근거 한 문장 (개조식)
+    changed:
+      type: boolean
+      description: 잠정 등급과 달라졌으면 true
+  required:
+  - risk_level
+  - rationale
+  - changed

@@ -12,66 +12,17 @@ from typing import Annotated
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
-from app.common import PhotoInput, RiskLevel
+from app import prompts
+from app.common import PhotoInput, PromptSelectable, RiskLevel
 from app.llm.gemini import generate_structured
 
-TEMPERATURE = 0.2
+NODE = "vision"
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # Gemini inline 첨부 한도(20MB)보다 넉넉히 아래로 잡는다.
 
-SYSTEM_PROMPT = """당신은 대학 안전·보건 담당자를 보조하는 위해 요소 분석가입니다.
-제보자가 올린 현장 사진 한 장과 부연 설명, 그리고 신고 위치를 받아 위험 요소를 판독합니다.
-
-[작성 규칙]
-1. detected_hazard: 사진에서 확인되는 위험 요소를 짧은 명사구로 특정합니다. (예: "바닥 타일 파손 (모서리 돌출)")
-2. photo_analysis: 사진에서 실제로 보이는 상태만 객관적으로 기술합니다. 크기·개수·정도를 알 수 있으면 포함합니다.
-   사진에서 확인되지 않는 내용을 추측해 단정하지 않습니다.
-3. risk: 해당 상태가 유발할 수 있는 사고를 인과관계로 서술합니다.
-4. exposed_target: 그 위험에 노출될 수 있는 사람을 신고 위치의 성격에 맞게 특정합니다.
-5. risk_level: low / medium / high / critical 중 하나를 고릅니다.
-   - critical: 즉시 인명 사고로 이어질 수 있음
-   - high: 중상 가능성이 있음
-   - medium: 경상·전도 등 부상 가능성이 있음
-   - low: 즉각적 위험은 낮으나 개선이 필요함
-6. 제보자의 감정 표현은 제거하고 사실만 남깁니다.
-7. 모든 문장은 한국어 문어체로 작성합니다.
-8. 반드시 주어진 JSON 스키마 형식으로만 출력합니다."""
-
-USER_PROMPT = """[사진]
-(첨부됨)
-
-[신고 위치]
-{location_text}
-
-[제보자 부연 설명]
-{description}
-
-위 위치에서 촬영된 첨부 사진의 위해 요소를 판독하세요."""
-
-SCHEMA = {
-    "type": "object",
-    "additionalProperties": False,
-    "properties": {
-        "detected_hazard": {"type": "string", "description": "감지된 위험 요소 (짧은 명사구)"},
-        "photo_analysis": {"type": "string", "description": "사진에서 관찰되는 상태"},
-        "risk": {"type": "string", "description": "위험성 (인과관계 서술)"},
-        "exposed_target": {"type": "string", "description": "위험에 노출될 수 있는 대상"},
-        "risk_level": {
-            "type": "string",
-            "description": "위험 등급",
-            "enum": ["low", "medium", "high", "critical"],
-        },
-    },
-    "required": [
-        "detected_hazard",
-        "photo_analysis",
-        "risk",
-        "exposed_target",
-        "risk_level",
-    ],
-}
+NO_DESCRIPTION = "(제보자 설명 없음 — 사진 단독으로 판독할 것)"
 
 
-class VisionAnalysisRequest(BaseModel):
+class VisionAnalysisRequest(PromptSelectable):
     session_id: str
     location_text: str = Field(description="신고 위치 (백엔드 location.parse 정규화 결과)")
     description: str = Field(description="제보자 부연 설명")
@@ -84,21 +35,36 @@ class VisionAnalysisResponse(BaseModel):
     risk: str
     exposed_target: str
     risk_level: RiskLevel
+    object_confidence: float = Field(
+        default=1.0, description="객체 식별 확신도. ② 가 이 값으로 객체 확인 질문 여부를 정한다"
+    )
+    object_candidates: list[str] = Field(
+        default_factory=list, description="확신이 낮을 때의 객체 명칭 후보"
+    )
+    prompt_version: str = Field(default="", description="이번 판독에 쓰인 프롬프트 버전")
 
 
 def run(req: VisionAnalysisRequest) -> VisionAnalysisResponse:
     image = req.photo.load()
+    prompt = prompts.pick(NODE, req.prompt_versions)
+    # 설명이 비면 자리를 비워두지 않는다. 빈 칸을 두면 '판독의 기준입니다' 라는 머리말만 남아
+    # 모델이 없는 설명을 지어내거나 지시를 무시한다. 규칙 4(사진 단독 판독)로 명시적으로 넘긴다.
+    description = (req.description or "").strip() or NO_DESCRIPTION
     result = generate_structured(
-        node="1801000002 초기 분석",
-        system_prompt=SYSTEM_PROMPT,
-        user_prompt=USER_PROMPT.format(
-            location_text=req.location_text, description=req.description
+        node=f"{prompt.node} [{prompt.label}]",
+        system_prompt=prompt.system,
+        user_prompt=prompt.render(
+            location_text=req.location_text, description=description
         ),
-        schema=SCHEMA,
-        temperature=TEMPERATURE,
+        schema=prompt.schema,
+        temperature=prompt.temperature,
         image=image,
     )
-    return VisionAnalysisResponse(**result)
+    # v1·v2 프롬프트에는 객체 확신도 필드가 없다. 그 경우 1.0(확신함)으로 두어
+    # ② 의 객체 확인 질문 분기를 타지 않게 한다 — 옛 버전으로 A/B 할 때도 동작해야 한다.
+    result.setdefault("object_confidence", 1.0)
+    result.setdefault("object_candidates", [])
+    return VisionAnalysisResponse(**result, prompt_version=prompt.version)
 
 
 async def read_upload(file: UploadFile) -> PhotoInput:
@@ -141,11 +107,17 @@ async def analyze_uploaded_photo(
     location_text: Annotated[str, Form(description="신고 위치")] = "김대건관 3층 서편 복도 (강의실 K308 앞)",
     description: Annotated[str, Form(description="제보자 부연 설명")] = "",
     session_id: Annotated[str, Form(description="비우면 자동 생성한다")] = "",
+    prompt_version: Annotated[
+        str, Form(description="프롬프트 버전 (v1 / v2 / v3 …). 비우면 기본 버전")
+    ] = "",
 ) -> VisionAnalysisResponse:
     """`/v1/vision/analyze` 의 파일 업로드 판(multipart/form-data).
 
     Swagger UI(`/docs`)에서 로컬 사진을 바로 골라 시험하려고 둔 개발용 경로다.
     본문 스키마만 다르고 결과는 `/v1/vision/analyze` 와 동일하다.
+
+    `prompt_version` 을 채우면 그 버전으로만 1회 판독한다 — 프롬프트 A/B 를
+    서버 재시작 없이 `/docs` 에서 바로 돌려 보기 위한 것이다.
     """
     photo = await read_upload(file)
     return run(
@@ -154,5 +126,6 @@ async def analyze_uploaded_photo(
             location_text=location_text,
             description=description,
             photo=photo,
+            prompt_versions={NODE: prompt_version.strip()} if prompt_version.strip() else None,
         )
     )

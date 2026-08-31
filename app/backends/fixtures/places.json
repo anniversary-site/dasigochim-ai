@@ -1,0 +1,989 @@
+{
+  "_readme": [
+    "장소 레지스트리. ⑥ 위치 정규화(/v1/locations/parse)의 대분류 테이블이다.",
+    "building_name 을 대분류로, 그 아래 층·호실·실내외 정규화 규칙을 장소마다 따로 건다.",
+    "장소가 늘어나면 places 배열에 항목만 추가한다. app/places.py 는 건드리지 않는다.",
+    "",
+    "[정규화 순서] 원문 → alias_match 로 place 후보 좁힘 → LLM 이 토막 분해",
+    "  → place.rules 로 floor/room_no/inside 정규화 → 교차검증 → 결과",
+    "",
+    "[층 정규화 순서] strip_tokens 로 '층/F' 제거 → floor.aliases 치환 → floor.pattern 검증",
+    "  → place.rules.floor.allowed 범위 검증 (null 이면 범위 검증 생략)",
+    "  예: '지하 1층'→'지하1'→'B1' / '이층'→'이'→'2' / '3F'→'3' / '옥상'→'R'",
+    "  주의: 층 정규화는 alias_match 용 정규화와 달리 선행 '-' 를 지우면 안 된다.",
+    "  '-1' 이 '1' 이 되면 지하가 지상으로 뒤집힌다. 공백·점만 제거하고 '-' 는 남긴다.",
+    "",
+    "[ambiguous_aliases] 둘 이상의 장소에 걸리는 별명. 자동 확정하지 않고 candidates 로",
+    "  돌려보내 사용자에게 되묻는다. 예: '리치'(리치과학관/리치별관), '곤자가'(국제학사/플라자).",
+    "",
+    "[review.status] verified = 명칭·코드·층수·좌표가 서강대 공식 캠퍼스맵 근거.",
+    "  draft = 근거 없이 채운 값. review.needs 는 아직 사람이 확인해야 하는 항목이다.",
+    "  aliases 는 전 항목이 추측이다 — 실사용 표현 기준으로 검수할 것.",
+    "",
+    "[building_id] backend buildings 테이블 PK. DB 에 행이 없으면 반드시 null 이다.",
+    "  현재 seed 에는 김대건관(1)·정하상관(2)·하비에르관(3) 3개뿐이다.",
+    "  없는 id 를 적으면 C-5 반복발생 집계가 엉뚱한 건물에 붙는다. 추측 금지.",
+    "  lat/lng 는 캠퍼스맵 실측값이라 나머지 건물 seed 를 만들 때 그대로 쓸 수 있다."
+  ],
+  "registry_version": 2,
+  "source": {
+    "url": "https://www.sogang.ac.kr/campusMap/building",
+    "fetched_at": "2026-08-31",
+    "note": "Nuxt 라우트 청크 index.db8fb051.js 의 {idx,title,content,latitude,longitude} 배열에서 추출",
+    "place_count": 37
+  },
+  "ambiguous_aliases": [
+    "곤자가",
+    "로욜라",
+    "리치"
+  ],
+  "defaults": {
+    "floor": {
+      "pattern": "^(B[1-9]|R|[1-9][0-9]?)$",
+      "strip_tokens": [
+        "층",
+        "F",
+        "f",
+        "floor",
+        "번째"
+      ],
+      "aliases": {
+        "지하": "B1",
+        "지하1": "B1",
+        "지하일": "B1",
+        "-1": "B1",
+        "b1": "B1",
+        "지하2": "B2",
+        "지하이": "B2",
+        "-2": "B2",
+        "b2": "B2",
+        "지하3": "B3",
+        "지하삼": "B3",
+        "-3": "B3",
+        "b3": "B3",
+        "지하4": "B4",
+        "지하사": "B4",
+        "-4": "B4",
+        "b4": "B4",
+        "일": "1",
+        "이": "2",
+        "삼": "3",
+        "사": "4",
+        "오": "5",
+        "육": "6",
+        "칠": "7",
+        "팔": "8",
+        "구": "9",
+        "십": "10",
+        "옥": "R",
+        "옥상": "R",
+        "옥탑": "R",
+        "루프탑": "R",
+        "rf": "R",
+        "r": "R"
+      }
+    },
+    "room_no": {
+      "keywords": [
+        "호실",
+        "호",
+        "강의실",
+        "연구실",
+        "실습실",
+        "세미나실",
+        "실"
+      ],
+      "digits": 3,
+      "floor_from_room": true
+    },
+    "detail": {
+      "max_len": 40,
+      "strip_particles": [
+        "에서",
+        "에",
+        "의",
+        "은",
+        "는",
+        "이",
+        "가",
+        "을",
+        "를"
+      ]
+    },
+    "inside_hints": {
+      "indoor": [
+        "복도",
+        "강의실",
+        "연구실",
+        "실습실",
+        "실험실",
+        "화장실",
+        "엘리베이터",
+        "승강기",
+        "계단실",
+        "정수기",
+        "로비",
+        "라운지",
+        "휴게실",
+        "사물함",
+        "천장",
+        "배전반",
+        "열람실",
+        "층"
+      ],
+      "outdoor": [
+        "정문",
+        "후문",
+        "남문",
+        "출입구 앞",
+        "입구 앞",
+        "현관 앞",
+        "외벽",
+        "벽면",
+        "주차장",
+        "화단",
+        "잔디",
+        "펜스",
+        "옥외",
+        "야외",
+        "인도",
+        "보도"
+      ]
+    },
+    "alias_match": {
+      "strip_suffixes": [
+        "에서",
+        "에",
+        "의",
+        "쪽",
+        "근처",
+        "앞",
+        "옆",
+        "뒤",
+        "부근"
+      ],
+      "min_len": 2,
+      "longest_match_first": true
+    }
+  },
+  "places": [
+    {
+      "key": "MAIN_GATE",
+      "map_idx": 1,
+      "building_id": null,
+      "name": "정문",
+      "official_title": "정문",
+      "code": null,
+      "kind": "outdoor",
+      "default_inside": false,
+      "lat": 37.5517046,
+      "lng": 126.9378313,
+      "aliases": [
+        "학교정문",
+        "메인게이트"
+      ],
+      "rules": {
+        "floor": {
+          "allowed": []
+        },
+        "room_no": {
+          "enabled": false,
+          "prefix": null,
+          "digits": 3,
+          "floor_from_room": false
+        },
+        "landmarks": [
+          "경비실",
+          "차단기",
+          "횡단보도"
+        ]
+      },
+      "source": "sogang campusMap #1",
+      "review": {
+        "status": "verified",
+        "needs": [
+          "aliases (사용자 실사용 별명 검수)"
+        ]
+      }
+    },
+    {
+      "key": "ALBATROSS_TOWER",
+      "map_idx": 2,
+      "building_id": null,
+      "name": "알바트로스 탑",
+      "official_title": "알바트로스 탑",
+      "code": null,
+      "kind": "outdoor",
+      "default_inside": false,
+      "lat": 37.5514775,
+      "lng": 126.9387227,
+      "aliases": [
+        "알바트로스탑",
+        "알바트로스",
+        "알바탑"
+      ],
+      "rules": {
+        "floor": {
+          "allowed": []
+        },
+        "room_no": {
+          "enabled": false,
+          "prefix": null,
+          "digits": 3,
+          "floor_from_room": false
+        },
+        "landmarks": [
+          "동상",
+          "계단"
+        ]
+      },
+      "source": "sogang campusMap #2",
+      "review": {
+        "status": "verified",
+        "needs": [
+          "aliases (사용자 실사용 별명 검수)"
+        ]
+      }
+    },
+    {
+      "key": "MAIN_HALL",
+      "map_idx": 3,
+      "building_id": null,
+      "name": "본관",
+      "official_title": "본관(A관)",
+      "code": "A",
+      "kind": "building",
+      "default_inside": true,
+      "lat": 37.5511246,
+      "lng": 126.9400895,
+      "aliases": [
+        "본관",
+        "A관",
+        "에이관"
+      ],
+      "rules": {
+        "floor": {
+          "allowed": [
+            "B1",
+            "1",
+            "2",
+            "3",
+            "4"
+          ]
+        },
+        "room_no": {
+          "enabled": true,
+          "prefix": "A",
+          "digits": 3,
+          "floor_from_room": true
+        },
+        "landmarks": [
+          "총장실",
+          "회의실",
+          "복도"
+        ]
+      },
+      "source": "sogang campusMap #3",
+      "review": {
+        "status": "verified",
+        "needs": [
+          "building_id (backend buildings 테이블 seed 후)",
+          "room_no.prefix 실제 표기 확인 (예: A308 / A-308)",
+          "aliases (사용자 실사용 별명 검수)"
+        ]
+      }
+    },
+    {
+      "key": "GEPPERT",
+      "map_idx": 4,
+      "building_id": null,
+      "name": "게페르트 남덕우 경제관",
+      "official_title": "게페르트 남덕우 경제관(GN관)",
+      "code": "GN",
+      "kind": "building",
+      "default_inside": true,
+      "lat": 37.5504533,
+      "lng": 126.9399825,
+      "aliases": [
+        "게페르트관",
+        "게페르트",
+        "남덕우관",
+        "경제관",
+        "GN관",
+        "지엔관"
+      ],
+      "rules": {
+        "floor": {
+          "allowed": [
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8"
+          ]
+        },
+        "room_no": {
+          "enabled": true,
+          "prefix": "GN",
+          "digits": 3,
+          "floor_from_room": true
+        },
+        "landmarks": [
+          "강의실",
+          "교수연구실",
+          "세미나실",
+          "실습실"
+        ]
+      },
+      "source": "sogang campusMap #4",
+      "review": {
+        "status": "verified",
+        "needs": [
+          "building_id (backend buildings 테이블 seed 후)",
+          "지하층 유무 (캠퍼스맵에 지상층만 기재)",
+          "room_no.prefix 실제 표기 확인 (예: GN308 / GN-308)",
+          "aliases (사용자 실사용 별명 검수)"
+        ]
+      }
+    },
+    {
+      "key": "JESUIT_RESIDENCE",
+      "map_idx": 5,
+      "building_id": null,
+      "name": "예수회공동체",
+      "official_title": "예수회공동체",
+      "code": null,
+      "kind": "building",
+      "default_inside": true,
+      "lat": 37.5515347,
+      "lng": 126.9404173,
+      "aliases": [
+        "사제관",
+        "예수회사제관"
+      ],
+      "rules": {
+        "floor": {
+          "allowed": null
+        },
+        "room_no": {
+          "enabled": true,
+          "prefix": null,
+          "digits": 3,
+          "floor_from_room": true
+        },
+        "landmarks": []
+      },
+      "source": "sogang campusMap #5",
+      "review": {
+        "status": "verified",
+        "needs": [
+          "building_id (backend buildings 테이블 seed 후)",
+          "floor.allowed (캠퍼스맵에 층수 미기재)",
+          "room_no.prefix 실제 표기 확인 (예: ?308 / ?-308)",
+          "aliases (사용자 실사용 별명 검수)"
+        ]
+      }
+    },
+    {
+      "key": "GABRIEL",
+      "map_idx": 6,
+      "building_id": null,
+      "name": "삼성 가브리엘관",
+      "official_title": "삼성 가브리엘관(GA관)",
+      "code": "GA",
+      "kind": "building",
+      "default_inside": true,
+      "lat": 37.55198,
+      "lng": 126.9390646,
+      "aliases": [
+        "가브리엘관",
+        "가브리엘",
+        "삼성가브리엘관",
+        "GA관",
+        "지에이관"
+      ],
+      "rules": {
+        "floor": {
+          "allowed": [
+            "B1",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7"
+          ]
+        },
+        "room_no": {
+          "enabled": true,
+          "prefix": "GA",
+          "digits": 3,
+          "floor_from_room": true
+        },
+        "landmarks": [
+          "스튜디오",
+          "멀티미디어실",
+          "세미나실"
+        ]
+      },
+      "source": "sogang campusMap #6",
+      "review": {
+        "status": "draft",
+        "needs": [
+          "building_id",
+          "code",
+          "floor.allowed",
+          "aliases"
+        ]
+      }
+    },
+    {
+      "key": "RICCI",
+      "building_id": null,
+      "name": "리치과학관",
+      "code": "R",
+      "kind": "building",
+      "default_inside": true,
+      "aliases": [
+        "리치관",
+        "리치",
+        "과학관",
+        "R관",
+        "알관",
+        "리찌과학관",
+        "리찌관"
+      ],
+      "rules": {
+        "floor": {
+          "allowed": null
+        },
+        "room_no": {
+          "enabled": true,
+          "prefix": null,
+          "digits": 3,
+          "floor_from_room": true
+        },
+        "landmarks": [
+          "실험실"
+        ]
+      },
+      "review": {
+        "status": "draft",
+        "needs": [
+          "building_id",
+          "code",
+          "floor.allowed",
+          "aliases"
+        ]
+      }
+    },
+    {
+      "key": "DASAN",
+      "building_id": null,
+      "name": "다산관",
+      "code": "D",
+      "kind": "building",
+      "default_inside": true,
+      "aliases": [
+        "다산",
+        "D관",
+        "디관",
+        "사회과학대",
+        "사과대"
+      ],
+      "rules": {
+        "floor": {
+          "allowed": null
+        },
+        "room_no": {
+          "enabled": true,
+          "prefix": null,
+          "digits": 3,
+          "floor_from_room": true
+        },
+        "landmarks": []
+      },
+      "review": {
+        "status": "draft",
+        "needs": [
+          "building_id",
+          "code",
+          "floor.allowed",
+          "aliases"
+        ]
+      }
+    },
+    {
+      "key": "MATTEO",
+      "building_id": null,
+      "name": "마태오관",
+      "code": "MA",
+      "kind": "building",
+      "default_inside": true,
+      "aliases": [
+        "마태오",
+        "MA관",
+        "마관",
+        "경영관"
+      ],
+      "rules": {
+        "floor": {
+          "allowed": null
+        },
+        "room_no": {
+          "enabled": true,
+          "prefix": null,
+          "digits": 3,
+          "floor_from_room": true
+        },
+        "landmarks": []
+      },
+      "review": {
+        "status": "draft",
+        "needs": [
+          "building_id",
+          "code",
+          "floor.allowed",
+          "aliases"
+        ]
+      }
+    },
+    {
+      "key": "GEPPERT",
+      "building_id": null,
+      "name": "게페르트남덕우경제관",
+      "code": "GN",
+      "kind": "building",
+      "default_inside": true,
+      "aliases": [
+        "게페르트관",
+        "게페르트",
+        "남덕우관",
+        "경제관",
+        "GN관",
+        "지엔관",
+        "남덕우경제관"
+      ],
+      "rules": {
+        "floor": {
+          "allowed": null
+        },
+        "room_no": {
+          "enabled": true,
+          "prefix": null,
+          "digits": 3,
+          "floor_from_room": true
+        },
+        "landmarks": []
+      },
+      "review": {
+        "status": "draft",
+        "needs": [
+          "building_id",
+          "code",
+          "floor.allowed",
+          "aliases"
+        ]
+      }
+    },
+    {
+      "key": "LOYOLA-1",
+      "building_id": null,
+      "name": "로욜라도서관 1관",
+      "code": "LYL-1",
+      "kind": "building",
+      "default_inside": true,
+      "aliases": [
+        "로욜라 1관",
+        "도서관 1관",
+        "중앙도서관 1관"
+      ],
+      "rules": {
+        "floor": {
+          "allowed": null
+        },
+        "room_no": {
+          "enabled": false,
+          "prefix": null,
+          "digits": 3,
+          "floor_from_room": false
+        },
+        "landmarks": []
+      },
+      "review": {
+        "status": "draft",
+        "needs": [
+          "building_id",
+          "code",
+          "floor.allowed",
+          "room_no.enabled"
+        ]
+      }
+    },
+    {
+      "key": "LOYOLA-2",
+      "building_id": null,
+      "name": "로욜라도서관 2관",
+      "code": "LYL-2",
+      "kind": "building",
+      "default_inside": true,
+      "aliases": [
+        "로욜라 2관",
+        "도서관 2관",
+        "중앙도서관 2관"
+      ],
+      "rules": {
+        "floor": {
+          "allowed": null
+        },
+        "room_no": {
+          "enabled": false,
+          "prefix": null,
+          "digits": 3,
+          "floor_from_room": false
+        },
+        "landmarks": []
+      },
+      "review": {
+        "status": "draft",
+        "needs": [
+          "building_id",
+          "code",
+          "floor.allowed",
+          "room_no.enabled"
+        ]
+      }
+    },
+    {
+      "key": "LOYOLA-3",
+      "building_id": null,
+      "name": "로욜라도서관 3관",
+      "code": "LYL-3",
+      "kind": "building",
+      "default_inside": true,
+      "aliases": [
+        "로욜라 3관",
+        "도서관 3관",
+        "중앙도서관 3관"
+      ],
+      "rules": {
+        "floor": {
+          "allowed": null
+        },
+        "room_no": {
+          "enabled": false,
+          "prefix": null,
+          "digits": 3,
+          "floor_from_room": false
+        },
+        "landmarks": []
+      },
+      "review": {
+        "status": "draft",
+        "needs": [
+          "building_id",
+          "code",
+          "floor.allowed",
+          "room_no.enabled"
+        ]
+      }
+    },
+    {
+      "key": "MARY_HALL",
+      "building_id": null,
+      "name": "메리홀",
+      "code": "M",
+      "kind": "building",
+      "default_inside": true,
+      "aliases": [
+        "메리관",
+        "메리",
+        "대공연장",
+        "공연장",
+        "소극장"
+      ],
+      "rules": {
+        "floor": {
+          "allowed": null
+        },
+        "room_no": {
+          "enabled": false,
+          "prefix": null,
+          "digits": 3,
+          "floor_from_room": false
+        },
+        "landmarks": [
+          "대극장",
+          "소극장",
+          "무대"
+        ]
+      },
+      "review": {
+        "status": "draft",
+        "needs": [
+          "building_id",
+          "floor.allowed",
+          "aliases"
+        ]
+      }
+    },
+    {
+      "key": "GONZAGA",
+      "building_id": null,
+      "name": "곤자가국제학사",
+      "code": "GH",
+      "kind": "building",
+      "default_inside": true,
+      "aliases": [
+        "곤자가",
+        "곤자가기숙사",
+        "국제학사",
+        "곤자가학사"
+      ],
+      "rules": {
+        "floor": {
+          "allowed": null
+        },
+        "room_no": {
+          "enabled": true,
+          "prefix": null,
+          "digits": 3,
+          "floor_from_room": true
+        },
+        "landmarks": []
+      },
+      "review": {
+        "status": "draft",
+        "needs": [
+          "building_id",
+          "code",
+          "floor.allowed",
+          "aliases"
+        ]
+      }
+    },
+    {
+      "key": "UJEONGWON",
+      "building_id": null,
+      "name": "우정원",
+      "code": "BW",
+      "kind": "building",
+      "default_inside": true,
+      "aliases": [
+        "우정관",
+        "학식당",
+        "학생 식당"
+      ],
+      "rules": {
+        "floor": {
+          "allowed": null
+        },
+        "room_no": {
+          "enabled": true,
+          "prefix": null,
+          "digits": 3,
+          "floor_from_room": true
+        },
+        "landmarks": []
+      },
+      "review": {
+        "status": "draft",
+        "needs": [
+          "building_id",
+          "code",
+          "floor.allowed",
+          "aliases"
+        ]
+      }
+    },
+    {
+      "key": "MAIN_FIELD",
+      "building_id": null,
+      "name": "대운동장",
+      "code": "F",
+      "kind": "outdoor",
+      "default_inside": false,
+      "aliases": [
+        "운동장",
+        "야구장",
+        "축구장"
+      ],
+      "rules": {
+        "floor": {
+          "allowed": []
+        },
+        "room_no": {
+          "enabled": false
+        },
+        "landmarks": [
+          "펜스",
+          "관중석",
+          "트랙",
+          "골대"
+        ]
+      },
+      "review": {
+        "status": "draft",
+        "needs": [
+          "aliases",
+          "landmarks"
+        ]
+      }
+    },
+    {
+      "key": "MAIN_GATE",
+      "building_id": null,
+      "name": "정문",
+      "code": null,
+      "kind": "outdoor",
+      "default_inside": false,
+      "aliases": [
+        "학교정문",
+        "메인게이트"
+      ],
+      "rules": {
+        "floor": {
+          "allowed": []
+        },
+        "room_no": {
+          "enabled": false
+        },
+        "landmarks": [
+          "경비실",
+          "차단기",
+          "횡단보도"
+        ]
+      },
+      "review": {
+        "status": "draft",
+        "needs": [
+          "aliases"
+        ]
+      }
+    },
+    {
+      "key": "BACK_GATE",
+      "building_id": null,
+      "name": "후문",
+      "code": null,
+      "kind": "outdoor",
+      "default_inside": false,
+      "aliases": [
+        "뒷문"
+      ],
+      "rules": {
+        "floor": {
+          "allowed": []
+        },
+        "room_no": {
+          "enabled": false
+        },
+        "landmarks": []
+      },
+      "review": {
+        "status": "draft",
+        "needs": [
+          "aliases"
+        ]
+      }
+    },
+    {
+      "key": "SOUTH_GATE",
+      "building_id": null,
+      "name": "남문",
+      "code": null,
+      "kind": "outdoor",
+      "default_inside": false,
+      "aliases": [],
+      "rules": {
+        "floor": {
+          "allowed": []
+        },
+        "room_no": {
+          "enabled": false
+        },
+        "landmarks": []
+      },
+      "review": {
+        "status": "draft",
+        "needs": [
+          "존재 여부 확인",
+          "aliases"
+        ]
+      }
+    },
+    {
+      "key": "OUTDOOR_PARKING",
+      "building_id": null,
+      "name": "지상주차장",
+      "code": null,
+      "kind": "outdoor",
+      "default_inside": false,
+      "aliases": [
+        "옥외주차장",
+        "야외주차장"
+      ],
+      "rules": {
+        "floor": {
+          "allowed": []
+        },
+        "room_no": {
+          "enabled": false
+        },
+        "landmarks": [
+          "주차구획",
+          "차단기",
+          "과속방지턱"
+        ]
+      },
+      "review": {
+        "status": "draft",
+        "needs": [
+          "aliases"
+        ]
+      }
+    },
+    {
+      "key": "UNDERGROUND_PARKING",
+      "building_id": null,
+      "name": "지하주차장",
+      "code": null,
+      "kind": "facility",
+      "default_inside": true,
+      "aliases": [
+        "지하주차",
+        "주차장지하",
+        "지하 주차장"
+      ],
+      "rules": {
+        "floor": {
+          "allowed": [
+            "B1",
+            "B2",
+            "B3"
+          ]
+        },
+        "room_no": {
+          "enabled": false
+        },
+        "landmarks": [
+          "기둥",
+          "램프",
+          "주차구획",
+          "스프링클러"
+        ]
+      },
+      "review": {
+        "status": "draft",
+        "needs": [
+          "소속 건물 지정 여부",
+          "floor.allowed"
+        ]
+      }
+    }
+  ]
+}

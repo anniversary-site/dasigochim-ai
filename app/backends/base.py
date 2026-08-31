@@ -37,8 +37,29 @@ class BackendClient(Protocol):
                   "confidence": float|None, "rationale": str}
         """
 
-    def search_cases(self, session_id: str, query_text: str, top_k: int) -> dict[str, Any]:
+    def search_cases(
+        self,
+        session_id: str,
+        query_text: str,
+        top_k: int,
+        *,
+        report_id: str | None = None,
+        building_id: int | None = None,
+        building_name: str | None = None,
+        floor: str | None = None,
+        window_days: int = 30,
+    ) -> dict[str, Any]:
         """C-5 POST /internal/v1/cases/search
 
-        returns: {"cases": [{"report_id","occurred_at","score","hazard","action_fundamental"}]}
+        cases 는 관련 과거 신고 목록, stats 는 동일 건물·기간 집계다.
+        stats 는 순수 SQL 집계라 임베딩 없이도 채워지며, cases 의 순위 기준만
+        2단계에서 'query_embedding 유사도' 로 바뀐다 (응답 계약은 그대로).
+
+        ``report_id`` 는 이번 신고를 결과에서 빼기 위한 것이고,
+        ``building_id`` 가 없으면 집계 대상이 없으므로 stats 는 null 이다.
+
+        returns: {"cases": [{"report_id","occurred_at","score","status",
+                             "building_name","floor","hazard","action_fundamental"}],
+                  "stats": {"window_days","building_name","floor","total","unresolved",
+                            "same_floor","risk_distribution","first_occurred_at"} | None}
         """

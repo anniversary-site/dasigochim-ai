@@ -21,7 +21,10 @@ from pathlib import Path
 import httpx
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_LOCATION = "김대건관 3층 서편 복도 (강의실 K308 앞)"
+# ⑤ 의 반복 발생 집계가 실제로 잡히도록 픽스처(cases.json)와 같은 건물·층을 기본값으로 둔다.
+DEFAULT_LOCATION = "김대건관 2층 서편 복도 (강의실 K208 앞)"
+DEFAULT_BUILDING = "김대건관"
+DEFAULT_FLOOR = "2"
 DEFAULT_DESCRIPTION = "복도 바닥 타일이 깨져서 위험해 보여요. 지나다닐 때마다 걸려서 넘어질 뻔했어요."
 
 
@@ -61,6 +64,8 @@ def main() -> None:
     parser.add_argument("--base-url", default="http://127.0.0.1:8000")
     parser.add_argument("--photo", default=str(ROOT / "scripts" / "sample.jpg"))
     parser.add_argument("--location", default=DEFAULT_LOCATION)
+    parser.add_argument("--building", default=DEFAULT_BUILDING, help="⑤ 반복 발생 집계 대상 건물명")
+    parser.add_argument("--floor", default=DEFAULT_FLOOR, help="⑤ 동일 층 집계용")
     parser.add_argument("--description", default=DEFAULT_DESCRIPTION)
     parser.add_argument("--question-count", type=int, default=3)
     parser.add_argument("--comment", default="야간에 조명이 어두워 더 위험하다는 점을 넣어 주세요.")
@@ -150,6 +155,8 @@ def main() -> None:
                 "vision": vision_core,
                 "risk_level": vision["risk_level"],
                 "qa_pairs": qa_pairs,
+                "building_name": args.building,
+                "floor": args.floor,
             },
             "draft",
         )
@@ -172,6 +179,8 @@ def main() -> None:
                     "qa_pairs": qa_pairs,
                     "previous_draft_json": json.dumps(draft, ensure_ascii=False),
                     "comment": args.comment,
+                    "building_name": args.building,
+                    "floor": args.floor,
                 },
                 "draft(regenerate)",
             )
@@ -192,6 +201,8 @@ def main() -> None:
                 "risk": final_draft["risk"],
                 "risk_level": final_draft["risk_level_final"],
                 "draft_json": json.dumps(final_draft, ensure_ascii=False),
+                "building_name": args.building,
+                "floor": args.floor,
             },
             "insight",
         )
@@ -211,6 +222,10 @@ def main() -> None:
           f" / assigned_by={department['assigned_by']}")
     print(f"유사 사례  : {final_draft['similar_case_count']}건 {final_draft['similar_case_ids']}")
     print(f"우선순위   : {insight['recommended_priority']} (반복: {insight['is_recurring']})")
+    stats = insight.get("recurrence")
+    if stats:
+        print(f"반복 근거  : 최근 {stats['window_days']}일 {stats['building_name']} {stats['total']}건"
+              f" (미해결 {stats['unresolved']}, 동일 층 {stats['same_floor']})")
     print(f"전체 기록  : {out_path}")
 
 
