@@ -56,7 +56,15 @@ def build_candidates_text(candidates: list[dict]) -> str:
 def run(req: DepartmentRequest) -> DepartmentResponse:
     """API 호출 1회 = Langfuse 트레이스 1개. session_id 로 신고 한 건이 묶인다."""
     with tracing.request_trace(req.session_id, "③ 담당 부서 판정"):
-        return _run(req)
+        result = _run(req)
+        # fallback 비율이 이 노드의 실패율이다. 모델이 코드를 지어냈거나 확신이 낮았다는 뜻이라,
+        # 프롬프트나 업무범위 코퍼스를 고칠 신호가 된다.
+        tracing.score(
+            "department_fallback", result.assigned_by == "fallback", data_type="BOOLEAN",
+            comment=result.rationale[:200],
+        )
+        tracing.score("llm_confidence", result.llm_confidence, data_type="NUMERIC")
+        return result
 
 
 def _run(req: DepartmentRequest) -> DepartmentResponse:

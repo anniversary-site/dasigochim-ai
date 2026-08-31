@@ -73,6 +73,28 @@ async def handle_backend_error(_: Request, exc: BackendError) -> JSONResponse:
 
 
 @app.on_event("startup")
+def check_langfuse_auth() -> None:
+    """Langfuse 인증을 기동 시 한 번 실제로 확인한다.
+
+    키가 비어 있지 않다는 것과 인증이 된다는 것은 다르다. 실패해도 기동은 막지 않는다 —
+    추적은 부가 기능이고 판독이 먼저다. 대신 로그에 분명히 남겨 조용히 묻히지 않게 한다.
+    """
+    if not tracing.enabled():
+        log.info("langfuse 추적 꺼짐 (키 없음 또는 LANGFUSE_TRACING=false)")
+        return
+    if tracing.auth_status():
+        log.info(
+            "langfuse 추적 켜짐 environment=%s mask_pii=%s",
+            settings.langfuse_tracing_environment, settings.langfuse_mask_pii,
+        )
+    else:
+        log.error(
+            "langfuse 인증 실패 — 트레이스가 전송되지 않는다. "
+            "LANGFUSE_PUBLIC_KEY(pk-lf-…)/SECRET_KEY(sk-lf-…) 가 뒤바뀌지 않았는지 확인할 것."
+        )
+
+
+@app.on_event("startup")
 def check_prompts() -> None:
     """활성 프롬프트가 전부 읽히는지 기동 시 확인한다.
 
@@ -98,6 +120,11 @@ def health() -> dict:
         "prompt_source": settings.prompt_source,
         "langfuse_ready": settings.langfuse_ready,
         "langfuse_tracing": tracing.enabled(),
+        # 키가 채워졌는지(ready)가 아니라 실제로 인증되는지(auth). 둘은 다르다 —
+        # public/secret 을 뒤바꿔 넣으면 ready 는 true 인데 전송은 401 로 버려진다.
+        "langfuse_auth": tracing.auth_status(),
+        "langfuse_environment": settings.langfuse_tracing_environment,
+        "langfuse_mask_pii": settings.langfuse_mask_pii,
     }
 
 

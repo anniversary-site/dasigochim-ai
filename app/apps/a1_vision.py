@@ -48,7 +48,15 @@ class VisionAnalysisResponse(BaseModel):
 def run(req: VisionAnalysisRequest) -> VisionAnalysisResponse:
     """API 호출 1회 = Langfuse 트레이스 1개. session_id 로 신고 한 건이 묶인다."""
     with tracing.request_trace(req.session_id, "① 사진 판독"):
-        return _run(req)
+        result = _run(req)
+        # 코드가 아는 사실을 점수로 남긴다. 프롬프트 버전별 확신도 분포를 Langfuse 에서
+        # 바로 비교하려는 것이다 — v1·v2 는 이 필드가 없어 항상 1.0 으로 채워진다.
+        tracing.score(
+            "object_confidence", result.object_confidence, data_type="NUMERIC",
+            comment=result.detected_hazard,
+        )
+        tracing.score("risk_level", result.risk_level, data_type="CATEGORICAL")
+        return result
 
 
 def _run(req: VisionAnalysisRequest) -> VisionAnalysisResponse:

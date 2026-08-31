@@ -195,6 +195,63 @@ def usage_from_gemini(response: Any) -> dict[str, int]:
     return usage
 
 
+def score(
+    name: str,
+    value: float | str | bool,
+    *,
+    data_type: str | None = None,
+    comment: str | None = None,
+) -> None:
+    """현재 트레이스에 점수를 붙인다.
+
+    **여기 올라가는 것은 LLM 이 매긴 점수가 아니라 코드가 아는 사실이다.**
+    ① 의 객체 확신도, ③ 의 부서 fallback 여부처럼 이미 계산해 둔 값을 남겨
+    "프롬프트 v2 와 v3 중 어느 쪽이 확신도가 높았나" 를 Langfuse 에서 바로 거를 수 있게 한다.
+    LLM-as-a-judge 는 그다음 단계다.
+
+    트레이스 단위로 붙인다. ④⑤ 는 generation 이 둘이라 어느 쪽에 달지 애매하고,
+    비교 단위는 "API 호출 1회" 이기 때문이다.
+    """
+    client = _client()
+    if client is None:
+        return
+    try:
+        client.score_current_trace(
+            name=name,
+            value=value,  # type: ignore[arg-type]
+            data_type=data_type,  # type: ignore[arg-type]
+            comment=comment,
+        )
+    except Exception as exc:  # noqa: BLE001 - 점수 실패가 판독을 막지 않는다
+        _warn_once("score", exc)
+
+
+_auth: bool | None = None
+
+
+def auth_status(refresh: bool = False) -> bool | None:
+    """Langfuse 인증이 실제로 되는지. 확인하지 않았거나 추적이 꺼져 있으면 None.
+
+    키가 "비어 있지 않다" 와 "인증된다" 는 다르다. public/secret 을 뒤바꿔 넣으면
+    두 값 다 채워져 있으므로 설정만 봐서는 정상으로 보이고, 전송은 401 로 조용히
+    버려진다. **실제로 그 사고가 났다.** 그래서 기동 시 한 번 실제로 물어본다.
+
+    ``auth_check()`` 는 네트워크 호출이라 요청마다 하지 않는다. 결과를 캐시한다.
+    """
+    global _auth
+    if _auth is not None and not refresh:
+        return _auth
+    client = _client()
+    if client is None:
+        return None
+    try:
+        _auth = bool(client.auth_check())
+    except Exception as exc:  # noqa: BLE001
+        _warn_once("auth_check", exc)
+        _auth = False
+    return _auth
+
+
 def flush() -> None:
     """종료 시 남은 이벤트를 밀어 넣는다. 실패해도 종료를 막지 않는다."""
     client = _client()

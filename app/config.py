@@ -60,6 +60,13 @@ class Settings(BaseSettings):
     langfuse_base_url: str = "https://cloud.langfuse.com"
     langfuse_prompt_prefix: str = "safewhale"
     langfuse_tracing: bool = True
+    # 트레이스가 쌓이는 환경 이름. 로컬·시연·운영이 한 프로젝트에 섞이면
+    # "운영에서 품질이 떨어졌다" 를 볼 수 없다. Langfuse UI 에서 이 값으로 거른다.
+    # SDK 가 스스로 읽는 환경변수 이름과 같게 두어 어느 쪽으로 넣어도 통하게 한다.
+    langfuse_tracing_environment: str = "local"
+    # 트레이스로 나가는 값에서 연락처·이메일 등 구조화된 개인정보를 지운다.
+    # 위치와 위험 요소 서술은 남긴다 — 그게 없으면 트레이스를 볼 이유가 없다.
+    langfuse_mask_pii: bool = True
 
     # 서버
     host: str = "127.0.0.1"
