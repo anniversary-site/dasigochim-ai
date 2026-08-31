@@ -54,6 +54,7 @@ app/
   common.py          공유 입력 조각 (VisionResult, PhotoInput, qa_history 조립)
   cases.py           C-5 과거사례 검색 + 목록 조립 (④⑤ 공용)
   llm/gemini.py      LLM 노드 1회 = generate_structured() 1회. 재시도·타임아웃 포함
+  llm/tracing.py     Langfuse 추적. 키가 없으면 전부 no-op (판독을 막지 않는다)
   apps/a1..a5.py     API 1개 = 파일 1개 (노드 배선 · 요청/응답 모델 · 라우터)
   prompts/           **프롬프트는 코드가 아니라 여기 있다** (아래 절 참고)
     __init__.py      로더 · 버전 결정 · 카탈로그
@@ -125,6 +126,28 @@ Langfuse 가 죽거나 키가 비면 **파일 소스로 자동 폴백한다** (�
 `str.format()`(`{var}`) 을 쓴다. 두 소스가 같은 렌더링을 타야 "Langfuse 에서만
 다르게 나온다" 는 버그가 안 생긴다. 대신 Langfuse UI 의 변수 자동 인식은 못 쓴다 —
 의도한 맞바꿈이다.
+
+### 추적 (Langfuse tracing)
+
+`LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` 만 채우면 켜진다.
+**`PROMPT_SOURCE` 와는 무관하다** — 프롬프트를 파일에서 읽어도 추적은 돈다.
+
+```
+API 호출 1회 = 트레이스 1개 (trace_name = "⑤ 요약·인사이트")
+  └─ generation "1805000005 제목·요약 [summary/v1]"
+  └─ generation "1805000006 인사이트 [insight/v1]"
+```
+
+generation 에 프롬프트 이름·버전·소스, 토큰 사용량, temperature 가 붙는다.
+`session_id` 는 트레이스 속성으로 올라가 Langfuse **Sessions** 에서 신고 한 건이
+①→②×3→③→④→⑤ 로 묶여 보인다. 어느 프롬프트 버전이 어떤 출력을 냈는지가
+자동으로 쌓이므로 `prompt_versions` A/B 의 근거가 된다.
+
+**추적 실패는 판독을 막지 않는다.** 키가 없거나 Langfuse 가 죽으면 전부 no-op 으로
+떨어지고 경고는 한 번만 찍는다. 사진 바이트는 싣지 않는다 (`has_image` 플래그만).
+`LANGFUSE_TRACING=false` 로 끌 수 있다.
+
+`GET /health` 의 `langfuse_tracing` 으로 켜졌는지 확인한다.
 
 ## Dify 와 달라진 점
 

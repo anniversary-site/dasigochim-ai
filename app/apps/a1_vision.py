@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from app import prompts
 from app.common import PhotoInput, PromptSelectable, RiskLevel
 from app.llm.gemini import generate_structured
+from app.llm import tracing
 
 NODE = "vision"
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # Gemini inline 첨부 한도(20MB)보다 넉넉히 아래로 잡는다.
@@ -45,6 +46,12 @@ class VisionAnalysisResponse(BaseModel):
 
 
 def run(req: VisionAnalysisRequest) -> VisionAnalysisResponse:
+    """API 호출 1회 = Langfuse 트레이스 1개. session_id 로 신고 한 건이 묶인다."""
+    with tracing.request_trace(req.session_id, "① 사진 판독"):
+        return _run(req)
+
+
+def _run(req: VisionAnalysisRequest) -> VisionAnalysisResponse:
     image = req.photo.load()
     prompt = prompts.pick(NODE, req.prompt_versions)
     # 설명이 비면 자리를 비워두지 않는다. 빈 칸을 두면 '판독의 기준입니다' 라는 머리말만 남아
@@ -59,6 +66,7 @@ def run(req: VisionAnalysisRequest) -> VisionAnalysisResponse:
         schema=prompt.schema,
         temperature=prompt.temperature,
         image=image,
+        prompt=prompt,
     )
     # v1·v2 프롬프트에는 객체 확신도 필드가 없다. 그 경우 1.0(확신함)으로 두어
     # ② 의 객체 확인 질문 분기를 타지 않게 한다 — 옛 버전으로 A/B 할 때도 동작해야 한다.

@@ -26,6 +26,8 @@ from app.config import get_settings
 log = logging.getLogger(__name__)
 
 PRODUCTION_LABEL = "production"
+# Prompt.raw 에 실어 나르는 SDK 프롬프트 객체의 키. 밑줄로 시작해 YAML 키와 겹치지 않는다.
+CLIENT_PROMPT_KEY = "_langfuse_prompt_object"
 
 
 class LangfuseUnavailable(RuntimeError):
@@ -99,6 +101,9 @@ def fetch(node: str, version: str) -> dict[str, Any]:
         "temperature": config["temperature"],
         "changelog": config.get("changelog", ""),
         "langfuse_version": getattr(fetched, "version", None),
+        # 추적에서 generation 에 이 프롬프트를 링크하려면 SDK 객체 자체가 필요하다.
+        # (app/llm/tracing.py 가 Prompt.langfuse_prompt 로 꺼내 쓴다)
+        CLIENT_PROMPT_KEY: fetched,
         **{k: v for k, v in config.items()
            if k not in ("schema", "temperature", "node", "changelog")},
     }

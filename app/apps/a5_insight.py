@@ -22,6 +22,7 @@ from app.cases import CaseStats, fetch_cases
 from app.common import PromptSelectable, RiskLevel
 from app.config import get_settings
 from app.llm.gemini import generate_structured
+from app.llm import tracing
 
 SUMMARY_NODE = "summary"
 INSIGHT_NODE = "insight"
@@ -61,6 +62,12 @@ class InsightResponse(BaseModel):
 
 
 def run(req: InsightRequest) -> InsightResponse:
+    """API 호출 1회 = Langfuse 트레이스 1개. session_id 로 신고 한 건이 묶인다."""
+    with tracing.request_trace(req.session_id, "⑤ 요약·인사이트"):
+        return _run(req)
+
+
+def _run(req: InsightRequest) -> InsightResponse:
     bundle = fetch_cases(
         session_id=req.session_id,
         location_text=req.location_text,
@@ -82,6 +89,7 @@ def run(req: InsightRequest) -> InsightResponse:
         user_prompt=summary_prompt.render(draft_json=req.draft_json),
         schema=summary_prompt.schema,
         temperature=summary_prompt.temperature,
+        prompt=summary_prompt,
     )
 
     insight_prompt = prompts.pick(INSIGHT_NODE, req.prompt_versions)
@@ -99,6 +107,7 @@ def run(req: InsightRequest) -> InsightResponse:
         ),
         schema=insight_prompt.schema,
         temperature=insight_prompt.temperature,
+        prompt=insight_prompt,
     )
 
     return InsightResponse(
