@@ -31,3 +31,6 @@ test_img.jpg
 Dockerfile
 .dockerignore
 compose.yaml
+
+# 문체 참조 원본 PDF (15MB). 색인 JSON 은 app/rag/index/ 에 있고 그것만 이미지에 들어간다
+docs/

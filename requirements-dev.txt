@@ -3,3 +3,7 @@
 # scripts/make_sample.py (합성 샘플 사진 생성) 전용.
 # 앱 런타임은 PIL 을 import 하지 않으므로 컨테이너 이미지에는 넣지 않는다.
 pillow>=10.0
+
+# scripts/build_rag_index.py (재해조사의견서 PDF → 문체 색인) 전용.
+# 런타임은 색인 JSON 만 읽고 PDF 를 열지 않는다 (app/rag/extract.py 의 지연 import).
+pypdf>=5.0

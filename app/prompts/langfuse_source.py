@@ -47,9 +47,15 @@ def get_langfuse():
     except ImportError as exc:  # requirements 에 있으나 방어한다
         raise LangfuseUnavailable(f"langfuse 패키지를 불러오지 못했다: {exc}") from exc
 
+    from app.llm.masking import mask
+
     return Langfuse(
         public_key=settings.langfuse_public_key,
         secret_key=settings.langfuse_secret_key,
+        # 로컬·시연·운영 트레이스를 한 프로젝트 안에서 갈라 본다.
+        environment=settings.langfuse_tracing_environment or None,
+        # 신고 본문에 섞인 연락처·이메일을 외부로 내보내지 않는다 (app/llm/masking.py).
+        mask=mask if settings.langfuse_mask_pii else None,
         base_url=settings.langfuse_base_url,
         tracing_enabled=settings.langfuse_tracing,
     )

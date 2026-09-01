@@ -44,6 +44,19 @@ class Settings(BaseSettings):
     # "이 객체가 맞습니까" 로 바꾼다. 판정은 LLM 이 아니라 이 임계값이 한다.
     object_confirm_threshold: float = 0.7
 
+    # ── ④ 문체 RAG (app/rag) ──────────────────────────────────────────
+    # docs/*.pdf 재해조사의견서에서 '쓰는 법' 만 뽑아 draft 프롬프트에 붙인다.
+    # 색인이 없으면 조용히 문체 참조 없이 작성한다 — 초안 생성을 막지 않는다.
+    rag_enabled: bool = True
+    rag_index_path: str = ""   # 비우면 app/rag/index/style_index.json
+    rag_docs_dir: str = ""     # 비우면 <ai-server>/docs (색인 빌드 때만 쓴다)
+    # 역할(관찰·위험·원인·조치)마다 붙일 견본 수. 늘릴수록 문체는 선명해지지만
+    # 눈앞의 문장을 베낄 여지도 함께 늘어난다. 2 는 그 사이에서 고른 값이다.
+    rag_top_k_per_role: int = 2
+    rag_max_chars_per_exemplar: int = 260
+    embedding_model: str = "gemini-embedding-001"
+    embedding_dimensions: int = 768
+
     # ── 프롬프트 소스 ──────────────────────────────────────────────────
     # file     : app/prompts/<노드>/<버전>.yaml (git 이 진실. 오프라인·CI 기본값)
     # langfuse : Langfuse 프롬프트 관리. 실패하면 file 로 자동 폴백한다.
@@ -60,6 +73,13 @@ class Settings(BaseSettings):
     langfuse_base_url: str = "https://cloud.langfuse.com"
     langfuse_prompt_prefix: str = "safewhale"
     langfuse_tracing: bool = True
+    # 트레이스가 쌓이는 환경 이름. 로컬·시연·운영이 한 프로젝트에 섞이면
+    # "운영에서 품질이 떨어졌다" 를 볼 수 없다. Langfuse UI 에서 이 값으로 거른다.
+    # SDK 가 스스로 읽는 환경변수 이름과 같게 두어 어느 쪽으로 넣어도 통하게 한다.
+    langfuse_tracing_environment: str = "local"
+    # 트레이스로 나가는 값에서 연락처·이메일 등 구조화된 개인정보를 지운다.
+    # 위치와 위험 요소 서술은 남긴다 — 그게 없으면 트레이스를 볼 이유가 없다.
+    langfuse_mask_pii: bool = True
 
     # 서버
     host: str = "127.0.0.1"

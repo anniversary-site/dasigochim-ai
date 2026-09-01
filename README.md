@@ -61,6 +61,13 @@ app/
     langfuse_source.py  Langfuse 연동 (실패 시 파일로 폴백)
     defaults.yaml    노드별 활성 버전
     <노드>/vN.yaml   system · user · schema · temperature · changelog
+  rag/               **④ 문체 RAG** — 재해조사의견서에서 '쓰는 법' 만 가져온다
+    extract.py       PDF → 조각 (역할 태깅 · 비식별)
+    profile.py       코퍼스 문체 통계 (종결어미 분포 등)
+    embeddings.py    Gemini 임베딩 + 해시 대체물
+    store.py         색인 파일 읽기·쓰기·코사인 검색
+    retriever.py     역할별 top-k → 프롬프트 블록 조립
+    index/           빌드 산출물 (git 에 넣는다)
   backends/
     base.py          C-1 / C-2 / C-5 계약
     stub_client.py   로컬 픽스처 (BACKEND_MODE=stub)
@@ -69,7 +76,9 @@ app/
 scripts/
   e2e.py             end-to-end 러너
   sync_prompts.py    프롬프트 YAML → Langfuse 업로드
+  build_rag_index.py 재해조사의견서 PDF → 문체 색인
   make_sample.py     합성 샘플 사진 생성기
+docs/                고용노동부 재해조사의견서 12건 (문체 참조 원본)
 ```
 
 ## 프롬프트 관리
@@ -82,7 +91,8 @@ scripts/
 | `vision` | ① 사진 판독 | v1 Dify 원문 · v2 제보자 설명 우선 · **v3 객체 식별 허들** |
 | `question` | ② 확인 질문 | v1 Dify 원문 · **v2 질문 축 로테이션** |
 | `object_check` | ② 객체 확인 질문 | **v1 (신규 노드)** |
-| `department` · `risk` · `draft` · `summary` · `insight` | ③④⑤ | v1 |
+| `draft` | ④ 신고서 초안 | v1 Dify 원문 · v2 기타 의견 제거 · **v3 재해조사의견서 문체 RAG** |
+| `department` · `risk` · `summary` · `insight` | ③④⑤ | v1 |
 
 ### 버전 고르기 — 좁은 것이 이긴다
 
@@ -148,6 +158,72 @@ generation 에 프롬프트 이름·버전·소스, 토큰 사용량, temperatur
 `LANGFUSE_TRACING=false` 로 끌 수 있다.
 
 `GET /health` 의 `langfuse_tracing` 으로 켜졌는지 확인한다.
+
+## ④ 문체 RAG — 재해조사의견서에서 '쓰는 법' 만 가져오기
+
+`docs/*.pdf` 는 고용노동부 **재해조사의견서 12건**이다. 사고 내용은 산업재해(톤백·지게차·
+축사 지붕)라 대학 캠퍼스 안전신고와 겹치지 않는다. 그런데도 이 문서를 두는 이유는 하나다 —
+**감독관이 사실을 적는 방식**을 ④ 가 따라 하게 하려는 것.
+
+```
+docs/*.pdf ─ extract ─▶ 조각(역할 태깅·비식별) ─ embeddings ─▶ index/style_index.json
+                                                                        │
+                                    ④ a4_draft ◀── retriever(역할별 top-k) ┘
+```
+
+### 무엇을 가져오고 무엇을 안 가져오는가
+
+가져오는 것은 문장의 골격이다. 개조식 종결, **확인과 추정을 어미로 가르는 습관**
+(`~임` / `~것으로 추정됨`), `[상태]→[사고 형태]→[피해]` 로 이어지는 위험 서술,
+`[대상]+[방법]+[기준]` 으로 닫는 조치 문장.
+
+내용은 가져오지 않는다. **한 겹으로 막지 않고 세 곳에서 막는다.**
+
+| 어디서 | 무엇을 |
+|---|---|
+| 색인 (`extract.py`) | 1·2장(사업장·인적사항)은 **아예 읽지 않는다.** 남은 본문의 날짜·시각·주소·인명은 `○` 로 가린다 |
+| 검색 (`retriever.py`) | 견본을 짧게 자르고(260자), 같은 사건에서 몰아 뽑지 않는다. 블록 머리에 경고문을 박는다 |
+| 프롬프트 (`draft/v3`) | 규칙 15 — 참조의 사물·수치·조치·법령·호칭을 옮기는 것은 **오답**이라고 명시 |
+
+`[유사 과거사례]`(우리 캠퍼스 기록, 내용 참고 가능)와 `[문체 참조]`(남의 문서, 문체만)를
+프롬프트에서 라벨로 갈라 놓은 것이 v3 의 핵심이다.
+
+### 색인 만들기
+
+```powershell
+.\.venv\Scripts\python.exe scriptsuild_rag_index.py              # Gemini 임베딩
+.\.venv\Scripts\python.exe scriptsuild_rag_index.py --embedder hash  # 키 없이 (CI·오프라인)
+.\.venv\Scripts\python.exe scriptsuild_rag_index.py --dry-run    # 무엇이 색인될지만
+```
+
+**색인은 빌드 산출물이지만 git 에 넣는다.** 받아 온 사람도 CI 도 컨테이너도 PDF 를 다시
+파싱하지 않고 같은 견본을 보게 하려는 것이다 — 프롬프트가 환경마다 달라지는 쪽이 더 나쁘다.
+**PDF 를 갈아 끼웠으면 이 스크립트를 다시 돌린다.** 색인은 저절로 갱신되지 않는다.
+
+### 실패해도 초안은 나온다
+
+과거사례(`app/cases.py`)와 같은 태도다. 검색 순위는 세 갈래로 내려간다.
+
+| `style_reference_source` | 언제 |
+|---|---|
+| `embedding` | 정상. 색인과 같은 방식으로 질의를 임베딩했다 |
+| `hash` | 임베딩 API 가 막혔다(쿼터·네트워크). 색인에 함께 구워 둔 해시 축으로 갈아탄다 |
+| `role-order` | 벡터가 아예 없다. 순위를 포기하고 역할별 원문 순서로 뽑는다 |
+| `none` | 색인이 없거나 `RAG_ENABLED=false`. 문체 참조 없이 `[문체 규격]`만으로 쓴다 |
+
+임베딩이 한 번 막히면 60초간 시도를 쉰다 — 요청마다 왕복 350ms 를 버리지 않기 위해서다.
+색인 빌드는 반대로 쿼터에 걸리면 기다렸다 다시 부른다. 절반만 만들어진 색인이 더 나쁘다.
+
+### 들여다보기
+
+| 엔드포인트 | 용도 |
+|---|---|
+| `GET /v1/rag/status` | 색인 상태 · 역할별 조각 수 · 코퍼스에서 집계한 문체 규격 |
+| `GET /v1/rag/style?query=…` | ④ 프롬프트에 **실제로 들어갈** 견본 블록을 그대로 |
+| `POST /v1/rag/reload` | 색인을 다시 만든 뒤 캐시만 비운다 |
+
+④ 응답의 `style_reference_ids` 로 어떤 견본이 그 초안에 붙었는지 되짚을 수 있다
+(`similar_case_ids` 를 남기는 이유와 같다).
 
 ## Dify 와 달라진 점
 
@@ -228,6 +304,9 @@ stub 은 `DEPARTMENT_CONFIDENCE_THRESHOLD`(0.7) / `DEFAULT_DEPARTMENT_CODE` 로 
 | `BACKEND_BASE_URL` | `http://localhost:8080` | Dify `env.BACKEND_BASE_URL` |
 | `AGENT_TOKEN` | `dev-agent-token` | Dify `env.AGENT_TOKEN` |
 | `LLM_MAX_RETRIES` | `2` | JSON 파손·5xx·429 에 재시도 |
+| `RAG_ENABLED` | `true` | ④ 문체 RAG. 끄면 `draft/v3` 이 `[작성 규칙]`만으로 쓴다 |
+| `RAG_TOP_K_PER_ROLE` | `2` | 역할마다 붙일 문체 견본 수 |
+| `EMBEDDING_MODEL` | `gemini-embedding-001` | 문체 견본 검색용 |
 
 ## 컨테이너
 

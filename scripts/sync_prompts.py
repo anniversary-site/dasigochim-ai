@@ -1,4 +1,4 @@
-"""로컬 프롬프트 YAML → Langfuse 업로드.
+r"""로컬 프롬프트 YAML → Langfuse 업로드.
 
 **git 의 YAML 이 진실이고, Langfuse 는 그 사본이다.** 방향은 한쪽뿐이다.
 Langfuse UI 에서 고친 것은 여기로 되돌아오지 않는다 — UI 는 열람·비교·실험용으로 쓰고,
