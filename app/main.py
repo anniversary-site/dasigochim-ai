@@ -24,6 +24,7 @@ from app.backends.base import BackendError
 from app.config import get_settings
 from app.llm import tracing
 from app.llm.gemini import LlmError
+from app.rag import retriever
 
 settings = get_settings()
 
@@ -95,6 +96,31 @@ def check_langfuse_auth() -> None:
 
 
 @app.on_event("startup")
+def check_style_index() -> None:
+    """문체 색인이 실제로 읽히는지 기동 시 확인한다.
+
+    색인이 없어도 ④ 는 돈다 — 문체 참조 없이 쓸 뿐이다. 그래서 **조용히 빠진다.**
+    조용한 것이 문제라 여기서 한 줄 남긴다. "왜 v2 때와 문체가 같지?" 를
+    로그 첫 화면에서 답할 수 있어야 한다.
+    """
+    status = retriever.status()
+    if not status.get("enabled"):
+        log.info("문체 RAG 꺼짐 (RAG_ENABLED=false)")
+    elif status.get("indexed"):
+        log.info(
+            "문체 색인 로드 조각=%d 문서=%d 임베딩=%s 생성=%s",
+            status["chunk_count"], len(status["source_docs"]),
+            status["embedder"], status["built_at"],
+        )
+    else:
+        log.warning(
+            "문체 색인이 없다 (%s) — ④ 는 문체 참조 없이 작성한다. "
+            "scripts/build_rag_index.py 로 만들 것.",
+            status["index_path"],
+        )
+
+
+@app.on_event("startup")
 def check_prompts() -> None:
     """활성 프롬프트가 전부 읽히는지 기동 시 확인한다.
 
@@ -125,6 +151,8 @@ def health() -> dict:
         "langfuse_auth": tracing.auth_status(),
         "langfuse_environment": settings.langfuse_tracing_environment,
         "langfuse_mask_pii": settings.langfuse_mask_pii,
+        # ④ 가 문체 견본을 실제로 붙일 수 있는 상태인지. 자세한 내용은 /v1/rag/status
+        "style_rag": retriever.status().get("indexed", False),
     }
 
 
@@ -164,6 +192,36 @@ def reload_prompts() -> dict:
     prompts.reload()
     prompts.verify_all()
     return {"status": "reloaded", "nodes": prompts.catalog()}
+
+
+@app.get("/v1/rag/status", tags=["문체 RAG"])
+def rag_status() -> dict:
+    """문체 색인 상태와 코퍼스에서 집계한 문체 규격."""
+    return retriever.status()
+
+
+@app.get("/v1/rag/style", tags=["문체 RAG"])
+def rag_style(query: str = "", top_k: int | None = None) -> dict:
+    """④ 프롬프트에 실제로 들어갈 문체 참조 블록을 그대로 돌려준다.
+
+    프롬프트를 손보기 전에 "이 신고에는 어떤 견본이 붙는가" 를 눈으로 보려는 것이다.
+    ``query`` 는 ④ 가 만드는 검색어와 같은 형태 — 위험 요소·사진 분석·위험성·위치를
+    이어 붙인 한 줄이다.
+    """
+    bundle = retriever.retrieve(query, top_k=top_k)
+    return {
+        "source": bundle.source,
+        "exemplar_ids": bundle.exemplar_ids,
+        "profile": bundle.profile_text,
+        "text": bundle.text,
+    }
+
+
+@app.post("/v1/rag/reload", tags=["문체 RAG"])
+def rag_reload() -> dict:
+    """색인을 다시 만든 뒤 캐시를 비운다 (프롬프트 reload 와 같은 용도)."""
+    retriever.reload()
+    return retriever.status()
 
 
 def main() -> None:

@@ -44,6 +44,19 @@ class Settings(BaseSettings):
     # "이 객체가 맞습니까" 로 바꾼다. 판정은 LLM 이 아니라 이 임계값이 한다.
     object_confirm_threshold: float = 0.7
 
+    # ── ④ 문체 RAG (app/rag) ──────────────────────────────────────────
+    # docs/*.pdf 재해조사의견서에서 '쓰는 법' 만 뽑아 draft 프롬프트에 붙인다.
+    # 색인이 없으면 조용히 문체 참조 없이 작성한다 — 초안 생성을 막지 않는다.
+    rag_enabled: bool = True
+    rag_index_path: str = ""   # 비우면 app/rag/index/style_index.json
+    rag_docs_dir: str = ""     # 비우면 <ai-server>/docs (색인 빌드 때만 쓴다)
+    # 역할(관찰·위험·원인·조치)마다 붙일 견본 수. 늘릴수록 문체는 선명해지지만
+    # 눈앞의 문장을 베낄 여지도 함께 늘어난다. 2 는 그 사이에서 고른 값이다.
+    rag_top_k_per_role: int = 2
+    rag_max_chars_per_exemplar: int = 260
+    embedding_model: str = "gemini-embedding-001"
+    embedding_dimensions: int = 768
+
     # ── 프롬프트 소스 ──────────────────────────────────────────────────
     # file     : app/prompts/<노드>/<버전>.yaml (git 이 진실. 오프라인·CI 기본값)
     # langfuse : Langfuse 프롬프트 관리. 실패하면 file 로 자동 폴백한다.

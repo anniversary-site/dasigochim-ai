@@ -69,6 +69,8 @@
 | POST | `/v1/drafts/generate` | ④ 신고서 초안 생성 | 신규 1회 + 재생성 N회 | ~3.5s |
 | POST | `/v1/insights/generate` | ⑤ 요약·인사이트 | 초안 확정 후 **비동기** 1회 | ~3.2s |
 | GET | `/health` | — | 헬스체크 | 즉시 |
+| GET | `/v1/rag/status` | — | ④ 문체 색인 상태 · 코퍼스 문체 규격 | 즉시 |
+| GET | `/v1/rag/style` | — | 이 신고에 붙을 문체 견본 미리보기 (`?query=…`) | ~0.4s |
 
 `GET /docs` 에 Swagger UI 가 떠 있다.
 
@@ -366,6 +368,8 @@ curl -X POST http://127.0.0.1:8000/v1/vision/analyze-upload   -F "file=@./현장
 | `risk_level_changed` | bool | 잠정 등급과 달라졌으면 `true` |
 | `similar_case_ids` | string[] | 참고한 과거사례 `report_id` |
 | `similar_case_count` | int | 과거사례 건수. 조회 실패 시 `0` |
+| `style_reference_ids` | string[] | 참고한 **문체 견본** 조각 id (`draft/v3` 부터) |
+| `style_reference_source` | string | 견본 선택 방식 — `embedding` / `hash` / `role-order` / `none` |
 
 > **`other_opinion`(기타 의견) 은 `draft/v2` 에서 제거됐다.** 나머지 9개 항목에
 > 담기지 않은 것을 쓰라는 칸이라 대부분 `"해당 없음"` 이거나 `action_urgent` ·
@@ -388,12 +392,20 @@ curl -X POST http://127.0.0.1:8000/v1/vision/analyze-upload   -F "file=@./현장
   "risk_level_rationale": "강의실 앞이라 통행량이 매우 많고 별도의 안전 조치가 전혀 되어 있지 않아 보행자 전도 및 부상 위험이 높으므로 잠정 등급을 상향 조정함.",
   "risk_level_changed": true,
   "similar_case_ids": ["R-2025-0412", "R-2025-0731", "R-2025-1103", "R-2025-0908"],
-  "similar_case_count": 4
+  "similar_case_count": 4,
+  "style_reference_ids": ["43_240801_(건설업…)#018", "49_241125_(건설업…)#012"],
+  "style_reference_source": "embedding"
 }
 ```
 
 > **문체 규칙**: 모든 항목은 개조식(`~함`, `~임`, `~됨`, `~요망`, `~바람`)이다.
 > 경어체(`~습니다`)는 쓰지 않는다. 프론트가 그대로 신고서에 인쇄하는 것을 전제한다.
+>
+> `draft/v3` 부터 이 문체를 **고용노동부 재해조사의견서**에서 배운다 (`app/rag`).
+> 확인된 사실은 `~임`·`~확인됨`, 미확인은 `~것으로 추정됨`으로 갈라 쓰고,
+> 조치는 `~하여야 함`·`~권고함`으로 닫는다. 참조 문서는 **문체만** 쓰이며 내용은
+> 넘어오지 않는다 — `style_reference_ids` 로 어떤 견본이 붙었는지 되짚을 수 있다.
+> 색인이 없어도 초안은 그대로 생성된다 (`style_reference_source: "none"`).
 >
 > **`regenerate` 는 초안 전체를 다시 쓴다.** 부분 패치가 아니다.
 > 코멘트가 언급하지 않은 항목은 직전 초안의 취지를 유지한다.
@@ -500,11 +512,15 @@ curl -X POST http://127.0.0.1:8000/v1/vision/analyze-upload   -F "file=@./현장
   "status": "ok",
   "model": "gemini-3.1-flash-lite",
   "backend_mode": "stub",
-  "api_key_loaded": true
+  "api_key_loaded": true,
+  "style_rag": true
 }
 ```
 
 `api_key_loaded: false` 면 `.env` 의 `GEMINI_API_KEY` 가 비어 있다는 뜻이다.
+`style_rag: false` 면 ④ 문체 색인이 없다는 뜻이다 — 초안은 그대로 생성되지만
+재해조사의견서 문체 견본 없이 쓴다. `scripts/build_rag_index.py` 로 만든다.
+자세한 상태는 `GET /v1/rag/status`.
 
 ---
 
@@ -629,6 +645,13 @@ AI 서버가 `(미조치 — 처리 진행 중)` 으로 표시한다.
 | `DEFAULT_DEPARTMENT_CODE` | `SAFETY_CENTER` | **stub 전용.** fallback 대상 |
 | `CASE_WINDOW_DAYS` | `30` | ⑤ 반복 발생 집계 기간. C-5 요청에 실어 보낸다 |
 | `RECURRING_THRESHOLD` | `3` | `is_recurring` 임계값. **이번 건을 포함한** 동일 건물 신고 횟수 |
+| `RAG_ENABLED` | `true` | ④ 문체 RAG. 끄면 `draft/v3` 이 [작성 규칙]만으로 쓴다 |
+| `RAG_INDEX_PATH` | — | 비우면 `app/rag/index/style_index.json` |
+| `RAG_DOCS_DIR` | — | 비우면 `ai-server/docs`. **색인 빌드 때만** 쓴다 |
+| `RAG_TOP_K_PER_ROLE` | `2` | 역할(관찰·위험·원인·조치)마다 붙일 견본 수 |
+| `RAG_MAX_CHARS_PER_EXEMPLAR` | `260` | 견본 하나의 길이 상한 |
+| `EMBEDDING_MODEL` | `gemini-embedding-001` | 문체 견본 검색용 |
+| `EMBEDDING_DIMENSIONS` | `768` | |
 
 ---
 
