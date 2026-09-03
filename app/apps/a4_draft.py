@@ -14,6 +14,7 @@ Start → 사례검색 조립 → C-5 과거사례 검색(HTTP, 실패 허용) �
 
 from __future__ import annotations
 
+import json
 from typing import Literal
 
 from fastapi import APIRouter
@@ -36,6 +37,7 @@ from app.rag import retriever
 
 RISK_NODE = "risk"
 DRAFT_NODE = "draft"
+QA_REFLECTION_NODE = "qa_reflection"
 
 # 이 자리표시자가 있는 프롬프트 버전에서만 문체 검색을 돈다. v1·v2 는 없으므로
 # 되돌려도 임베딩 호출이 한 번 낭비되지 않는다.
@@ -85,12 +87,27 @@ class DraftResponse(BaseModel):
     style_reference_source: str = Field(
         default="none", description="문체 견본 선택 방식 (embedding | role-order | none)"
     )
+    qa_reflection_passed: bool = Field(
+        default=True, description="질의응답의 핵심 사실이 최종 초안에 반영됐는지"
+    )
+    qa_reflection_score: float = Field(
+        default=1.0, ge=0.0, le=1.0, description="질의응답 핵심 사실 반영률"
+    )
+    qa_reflection_missing_facts: list[str] = Field(
+        default_factory=list, description="자동 보정 후에도 남은 질의응답 누락 사실"
+    )
+    qa_reflection_corrected: bool = Field(
+        default=False, description="질의응답 누락 때문에 초안을 자동 보정했는지"
+    )
 
 
 def run(req: DraftRequest) -> DraftResponse:
     """API 호출 1회 = Langfuse 트레이스 1개. session_id 로 신고 한 건이 묶인다."""
     with tracing.request_trace(req.session_id, "④ 신고서 초안 생성"):
-        return _run(req)
+        result = _run(req)
+        tracing.score("qa_reflection_coverage", result.qa_reflection_score, data_type="NUMERIC")
+        tracing.score("qa_reflection_passed", result.qa_reflection_passed, data_type="BOOLEAN")
+        return result
 
 
 def _run(req: DraftRequest) -> DraftResponse:
@@ -183,6 +200,21 @@ def _run(req: DraftRequest) -> DraftResponse:
         temperature=draft_prompt.temperature,
         prompt=draft_prompt,
     )
+    corrected = False
+    reflection = _empty_qa_reflection()
+    if (req.qa_history and req.qa_history.strip()) or req.qa_pairs:
+        reflection_prompt = prompts.pick(QA_REFLECTION_NODE, req.prompt_versions)
+        reflection = _validate_qa_reflection(reflection_prompt, qa_history, draft)
+        if not reflection["passed"] and reflection["missing_facts"]:
+            corrected = True
+            draft = _correct_missing_qa(
+                draft_prompt=draft_prompt,
+                base_system_prompt=system_prompt,
+                base_user_prompt=user_prompt,
+                draft=draft,
+                missing_facts=reflection["missing_facts"],
+            )
+            reflection = _validate_qa_reflection(reflection_prompt, qa_history, draft)
 
     return DraftResponse(
         **draft,
@@ -193,6 +225,55 @@ def _run(req: DraftRequest) -> DraftResponse:
         similar_case_count=bundle.case_count,
         style_reference_ids=style.exemplar_ids,
         style_reference_source=style.source,
+        qa_reflection_passed=bool(reflection["passed"]),
+        qa_reflection_score=float(reflection["coverage_score"]),
+        qa_reflection_missing_facts=list(reflection["missing_facts"]),
+        qa_reflection_corrected=corrected,
+    )
+
+
+def _empty_qa_reflection() -> dict:
+    return {
+        "passed": True,
+        "coverage_score": 1.0,
+        "missing_facts": [],
+        "ignored_answers": [],
+    }
+
+
+def _validate_qa_reflection(prompt, qa_history: str, draft: dict) -> dict:
+    return generate_structured(
+        node=f"{prompt.node} [{prompt.label}]",
+        system_prompt=prompt.system,
+        user_prompt=prompt.render(
+            qa_history=qa_history,
+            draft_json=json.dumps(draft, ensure_ascii=False),
+        ),
+        schema=prompt.schema,
+        temperature=prompt.temperature,
+        prompt=prompt,
+    )
+
+
+def _correct_missing_qa(
+    *, draft_prompt, base_system_prompt: str, base_user_prompt: str,
+    draft: dict, missing_facts: list[str],
+) -> dict:
+    correction = (
+        "\n\n[질의응답 반영 보정]\n"
+        "검증 결과 아래 핵심 사실이 초안에서 누락됐습니다. 사실을 과장하거나 새로 만들지 말고, "
+        "관련 항목에 자연스럽게 반영하여 초안 전체를 다시 출력합니다. 기존 JSON 스키마와 문체 규칙을 지킵니다.\n"
+        + "\n".join(f"- {fact}" for fact in missing_facts)
+        + "\n\n[보정 전 초안]\n"
+        + json.dumps(draft, ensure_ascii=False)
+    )
+    return generate_structured(
+        node=f"{draft_prompt.node} (질의응답 보정) [{draft_prompt.label}]",
+        system_prompt=base_system_prompt,
+        user_prompt=base_user_prompt + correction,
+        schema=draft_prompt.schema,
+        temperature=draft_prompt.temperature,
+        prompt=draft_prompt,
     )
 
 

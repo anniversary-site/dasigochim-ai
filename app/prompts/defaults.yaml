@@ -15,5 +15,6 @@ active:
   department: v1
   risk: v1
   draft: v3
+  qa_reflection: v1
   summary: v1
   insight: v1
