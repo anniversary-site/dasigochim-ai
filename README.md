@@ -354,7 +354,7 @@ $env:AI_BACKEND_MODE = "http"; docker compose up --build
 
 ```yaml
   ai:
-    image: ghcr.io/safewhaleartechsogang/ai-server:${AI_IMAGE_TAG}
+    image: ghcr.io/anniversary-site/ai-server:${AI_IMAGE_TAG}
     restart: unless-stopped
     expose:
       - "8000"                      # ports 로 열지 않는다

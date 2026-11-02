@@ -9,12 +9,12 @@
 #
 # 실배포와 같은 mem_limit(160m)·worker 1개로 맞춰 뒀다. 여기서 OOM 이 나면 EC2 에서도 난다.
 
-name: safewhale-ai
+name: dasigochim-ai
 
 services:
   ai:
     build: .
-    image: safewhale/ai:local
+    image: dasigochim/ai:local
     init: true
     restart: unless-stopped
 

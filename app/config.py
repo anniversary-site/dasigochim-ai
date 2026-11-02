@@ -71,7 +71,7 @@ class Settings(BaseSettings):
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
     langfuse_base_url: str = "https://cloud.langfuse.com"
-    langfuse_prompt_prefix: str = "safewhale"
+    langfuse_prompt_prefix: str = "dasigochim"
     langfuse_tracing: bool = True
     # 트레이스가 쌓이는 환경 이름. 로컬·시연·운영이 한 프로젝트에 섞이면
     # "운영에서 품질이 떨어졌다" 를 볼 수 없다. Langfuse UI 에서 이 값으로 거른다.

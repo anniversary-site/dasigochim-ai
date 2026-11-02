@@ -8,7 +8,7 @@
 #   - 외부 포트 비공개 (compose 의 expose 만, ports 없음)
 #   - EC2 에서 빌드하지 않는다. CI 가 GHCR 에 올린 이미지를 내려받아 쓴다
 #
-# 로컬 빌드:  docker build -t safewhale/ai:local .
+# 로컬 빌드:  docker build -t dasigochim/ai:local .
 # 로컬 실행:  docker compose up --build   (compose.yaml 참고)
 
 # ── 1단계: 의존성만 별도로 설치한다 ────────────────────────────────────
@@ -27,9 +27,9 @@ RUN python -m venv /opt/venv \
 # ── 2단계: 실행 이미지 ─────────────────────────────────────────────────
 FROM python:3.12-slim AS runtime
 
-LABEL org.opencontainers.image.title="safewhale-ai-server" \
+LABEL org.opencontainers.image.title="dasigochim-ai-server" \
       org.opencontainers.image.description="안전고래 AI 서버 — 사진 판독·질문 생성·부서 판정·신고서 초안·인사이트" \
-      org.opencontainers.image.source="https://github.com/safewhaleartechsogang/ai-server"
+      org.opencontainers.image.source="https://github.com/anniversary-site/dasigochim-ai"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

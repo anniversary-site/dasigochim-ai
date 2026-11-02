@@ -3,7 +3,7 @@
 **git 의 YAML 이 진실이고, Langfuse 는 그 사본을 운영·실험용으로 굴리는 층이다.**
 Langfuse 가 죽어도 서비스가 죽으면 안 되므로 어떤 실패든 파일 소스로 되돌아간다.
 
-- 노드 하나 = Langfuse 프롬프트 하나 (`safewhale/vision` 처럼 prefix 를 붙인다)
+- 노드 하나 = Langfuse 프롬프트 하나 (`dasigochim/vision` 처럼 prefix 를 붙인다)
 - system/user 는 chat 프롬프트의 두 메시지로 올린다 (Langfuse UI 에서 그대로 읽힌다)
 - temperature 와 JSON 스키마는 `config` 에 실린다 — 버전과 함께 고정되어야 하기 때문이다
 - 로컬 파일 버전 `vN` 은 Langfuse **label** 로 올라간다. 그래서 파일 모드와 Langfuse
@@ -151,7 +151,7 @@ def push(node: str, version: str, data: dict[str, Any], *, production: bool) -> 
             {"role": "user", "content": str(data["user"]).strip()},
         ],
         labels=labels,
-        tags=["safewhale", node],
+        tags=["dasigochim", node],
         config=config,
         commit_message=(data.get("changelog") or f"{node} {version}").strip().splitlines()[0][:200],
     )
