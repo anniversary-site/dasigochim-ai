@@ -60,7 +60,7 @@ def photo_payload(photo: str) -> dict:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="안전고래 AI 서버 end-to-end 실험")
+    parser = argparse.ArgumentParser(description="다시고침 AI 서버 end-to-end 실험")
     parser.add_argument("--base-url", default="http://127.0.0.1:8000")
     parser.add_argument("--photo", default=str(ROOT / "scripts" / "sample.jpg"))
     parser.add_argument("--location", default=DEFAULT_LOCATION)

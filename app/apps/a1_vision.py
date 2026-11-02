@@ -120,7 +120,7 @@ def analyze_photo(req: VisionAnalysisRequest) -> VisionAnalysisResponse:
 @router.post("/v1/vision/analyze-upload", response_model=VisionAnalysisResponse)
 async def analyze_uploaded_photo(
     file: Annotated[UploadFile, File(description="현장 사진 파일 (jpg / png / webp, 10MB 이하)")],
-    location_text: Annotated[str, Form(description="신고 위치")] = "김대건관 3층 서편 복도 (강의실 K308 앞)",
+    location_text: Annotated[str, Form(description="신고 위치")] = "공덕역 청년안심주택 e·seo(이서) 12층 복도 엘리베이터 홀 앞",
     description: Annotated[str, Form(description="제보자 부연 설명")] = "",
     session_id: Annotated[str, Form(description="비우면 자동 생성한다")] = "",
     prompt_version: Annotated[

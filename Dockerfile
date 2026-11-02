@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 #
-# 안전고래 AI 서버 (FastAPI + Gemini)
+# 다시고침 AI 서버 (FastAPI + Gemini)
 #
 # 시연 배포 기준 — 2026-08-30_인프라_시연배포_최종결정.md
 #   - t3.micro 1대에 nginx/backend/ai/postgres 를 나눠 띄운다
@@ -28,7 +28,7 @@ RUN python -m venv /opt/venv \
 FROM python:3.12-slim AS runtime
 
 LABEL org.opencontainers.image.title="dasigochim-ai-server" \
-      org.opencontainers.image.description="안전고래 AI 서버 — 사진 판독·질문 생성·부서 판정·신고서 초안·인사이트" \
+      org.opencontainers.image.description="다시고침 AI 서버 — 사진 판독·질문 생성·부서 판정·신고서 초안·인사이트" \
       org.opencontainers.image.source="https://github.com/anniversary-site/dasigochim-ai"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \

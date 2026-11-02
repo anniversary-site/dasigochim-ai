@@ -1,4 +1,4 @@
-"""안전고래 AI 서버 — Dify 5개 앱을 5개 REST 엔드포인트로 옮긴 프로토타입.
+"""다시고침 AI 서버 — Dify 5개 앱을 5개 REST 엔드포인트로 옮긴 프로토타입.
 
 | 엔드포인트                   | 원본 Dify 앱          |
 |------------------------------|-----------------------|
@@ -35,7 +35,7 @@ logging.basicConfig(
 log = logging.getLogger("app")
 
 app = FastAPI(
-    title="안전고래 AI 서버",
+    title="다시고침 AI 서버",
     version="0.1.0",
     description=__doc__,
 )
