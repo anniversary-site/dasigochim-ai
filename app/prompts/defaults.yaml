@@ -10,7 +10,7 @@
 
 active:
   vision: v3
-  question: v2
+  question: v3
   object_check: v1
   department: v1
   risk: v1
