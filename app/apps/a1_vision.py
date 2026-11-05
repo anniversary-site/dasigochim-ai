@@ -42,6 +42,11 @@ class VisionAnalysisResponse(BaseModel):
     object_candidates: list[str] = Field(
         default_factory=list, description="확신이 낮을 때의 객체 명칭 후보"
     )
+    # vision v4~: 위험도 점수표 (가능성 × 중대성, KOSHA 3×3 준용). 옛 버전에는 없다.
+    likelihood: int | None = Field(default=None, description="가능성 1~3")
+    severity: int | None = Field(default=None, description="중대성 1~3")
+    mandatory_high_category: str = Field(default="", description="무조건 high 유형 이름. 해당 없으면 빈 문자열")
+    ongoing_emergency: bool = Field(default=False, description="지금 진행 중인 긴급 상황 — 119 안내 대상")
     prompt_version: str = Field(default="", description="이번 판독에 쓰인 프롬프트 버전")
 
 

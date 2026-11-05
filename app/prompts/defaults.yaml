@@ -9,11 +9,11 @@
 # scripts/sync_prompts.py 가 파일 버전을 같은 이름의 label 로 올린다.
 
 active:
-  vision: v3
+  vision: v4
   question: v3
   object_check: v1
   department: v1
-  risk: v1
+  risk: v2
   draft: v3
   qa_reflection: v1
   summary: v1
